@@ -1,0 +1,46 @@
+name: dco
+on:
+  pull_request:
+    branches: [main]
+
+# Verifies every non-merge commit in the PR carries a Signed-off-by trailer (DCO 1.1) whose email
+# matches the commit author or committer. Pure bash + the official checkout action — no third-party
+# action in the trust path. See CONTRIBUTING.md / DCO.
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check Signed-off-by on every commit
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          ok=1
+          for sha in $(git rev-list "$BASE..$HEAD"); do
+            # skip merge commits (more than one parent)
+            if [ "$(git rev-list --parents -n1 "$sha" | wc -w)" -gt 2 ]; then
+              continue
+            fi
+            ae=$(git show -s --format='%ae' "$sha" | tr '[:upper:]' '[:lower:]')
+            ce=$(git show -s --format='%ce' "$sha" | tr '[:upper:]' '[:lower:]')
+            mapfile -t emails < <(git show -s --format='%B' "$sha" \
+              | grep -ioE '^Signed-off-by:[[:space:]]*.+<[^>]+>' \
+              | grep -ioE '<[^>]+>' | tr -d '<>' | tr '[:upper:]' '[:lower:]')
+            if [ "${#emails[@]}" -eq 0 ]; then
+              echo "::error::commit ${sha:0:8} has no Signed-off-by — run: git commit --amend -s --no-edit"
+              ok=0; continue
+            fi
+            match=0
+            for e in "${emails[@]}"; do
+              [ "$e" = "$ae" ] || [ "$e" = "$ce" ] && match=1
+            done
+            if [ "$match" -ne 1 ]; then
+              echo "::error::commit ${sha:0:8} Signed-off-by does not match author <$ae> — sign off as yourself"
+              ok=0
+            fi
+          done
+          if [ "$ok" -eq 1 ]; then echo "✅ DCO: all commits signed off"; else exit 1; fi

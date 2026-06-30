@@ -1,0 +1,7 @@
+# Burnerpad security contact — RFC 9116 (https://www.rfc-editor.org/rfc/rfc9116)
+# Operators: update Expires (keep it within 12 months) and consider PGP-clearsigning this file.
+
+Contact: mailto:security@burnerpad.com
+Expires: 2027-06-26T00:00:00.000Z
+Preferred-Languages: en
+Policy: https://github.com/burnerpad/burnerpad-lite/blob/main/SECURITY.md

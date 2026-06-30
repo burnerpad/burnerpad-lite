@@ -1,0 +1,390 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (C) 2026 Impulsa SLU */
+
+/* ── self-hosted fonts (SIL OFL 1.1, served same-origin from /fonts — see priv/static/fonts/NOTICE.md).
+   Hanken Grotesk (body) and JetBrains Mono (code) are variable faces spanning the weight axis; Baloo 2
+   is the bold display weight used for the wordmark. All subset to the `latin` range. `font-display: swap`
+   so text is never invisible while a face loads, falling back to system-ui / monospace. */
+@font-face {
+  font-family: "Hanken Grotesk";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/hanken-grotesk-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Baloo 2";
+  font-style: normal;
+  font-weight: 700 800;
+  font-display: swap;
+  src: url("/fonts/baloo2-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin.woff2") format("woff2");
+}
+
+/* ── design tokens ──────────────────────────────────────────────────────────
+   Colors live ONLY here, as custom properties. The default (no `data-theme`) is DARK; theme.js stamps
+   `data-theme="light"|"dark"` on <html> from localStorage BEFORE paint, so a manual choice wins with no
+   flash. --accent is the fixed ember brand (icons/borders/large headings); solid buttons use the darker
+   --accent-fill / --danger-fill and small accent text uses --accent-text, so white-on-fill and
+   accent-on-surface both clear WCAG AA in BOTH themes. */
+:root {
+  color-scheme: dark;
+  --bg: #15130f;
+  --bg2: #1b1813;
+  --card: #1f1c16;
+  --card2: #26221b;
+  --border: #312c23;
+  --text: #f4efe6;
+  --muted: #a89f8e;
+  --faint: #6f6857;
+  --good: #5fbf8e;
+  --good-soft: rgba(95, 191, 142, 0.14);
+  --warn: #e0a23c;
+  --warn-soft: rgba(224, 162, 60, 0.12);
+  --warn-border: rgba(224, 162, 60, 0.32);
+  --danger: #e5634d;
+  --danger-soft: rgba(229, 99, 77, 0.12);
+  --danger-border: rgba(229, 99, 77, 0.36);
+  --danger-fill: #c8472f; /* solid danger button: white label clears AA (4.77:1) */
+  --bad: #f2453d;
+  --accent: #ee5a24; /* brand ember — icons, borders, focus rings, large headings */
+  --accent2: #b8420d; /* hover fill for solid accent buttons (white label AA) */
+  --accent-fill: #cf4a18; /* solid accent button fill — white label clears AA (4.52:1) */
+  --accent-text: var(--accent); /* accent as small body text (ember already passes on dark) */
+  --accent-soft: rgba(238, 90, 36, 0.14);
+  --accent-border: rgba(238, 90, 36, 0.34);
+  --on-accent: #ffffff;
+  --chip-text: #f4926e;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f7f4ee;
+  --bg2: #fbf9f4;
+  --card: #ffffff;
+  --card2: #f4f1ea;
+  --border: #e7e1d6;
+  --text: #211e18;
+  --muted: #6e6656;
+  --faint: #9a9282;
+  --good: #198754; /* darkened so the strength/check label clears AA on the white panel */
+  --good-soft: rgba(46, 157, 107, 0.12);
+  --warn: #946a18; /* darkened so the "weaker" strength label clears AA */
+  --warn-soft: rgba(185, 128, 42, 0.13);
+  --warn-border: rgba(185, 128, 42, 0.3);
+  --danger: #c8472f;
+  --danger-soft: rgba(200, 71, 47, 0.1);
+  --danger-border: rgba(200, 71, 47, 0.32);
+  --danger-fill: #c8472f;
+  --bad: #cf3a2a;
+  --accent2: #b8420d;
+  --accent-fill: #cf4a18;
+  --accent-text: #b8420d; /* darker ember for small accent TEXT on light surfaces (~4.9:1) */
+  --accent-soft: rgba(238, 90, 36, 0.1);
+  --accent-border: rgba(238, 90, 36, 0.3);
+  --chip-text: #a83c12; /* darkened passphrase-word chip text for AA on light */
+}
+
+* { box-sizing: border-box; }
+/* The `hidden` attribute must always win over author `display` rules (JS show()/hide() flips it). */
+[hidden] { display: none !important; }
+
+/* Honor the OS "reduce motion" preference — zero out the color/border transitions and the theme flip. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
+
+html { background: var(--bg); }
+body {
+  margin: 0;
+  font: 16px/1.5 "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--text);
+  background: var(--bg);
+  min-height: 100vh;
+}
+::selection { background: rgba(238, 90, 36, 0.28); }
+
+/* 42rem cap with 1.25rem side padding (border-box) ⇒ ~632px content column, matching the design's
+   640px frame minus its inner padding; the 20px gutter keeps it off the edges on narrow screens. */
+main { max-width: 42rem; margin: 0 auto; padding: 48px 20px 40px; }
+
+a { color: var(--accent-text); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p { margin: 0 0 1rem; }
+.muted { color: var(--muted); }
+.mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* headings: the create page uses .hero-title for the value prop; other pages use <h1>/<h2> as section heads */
+h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.022em; line-height: 1.12; margin: 0 0 0.5rem; }
+h2 { font-size: 21px; font-weight: 600; letter-spacing: -0.01em; margin: 1.4rem 0 0.4rem; }
+ul { margin: 0.5rem 0 1rem; padding-left: 1.15rem; color: var(--muted); }
+li { margin: 0.3rem 0; line-height: 1.55; }
+.ember { color: var(--accent); }
+
+/* ── inline icons (sprite in-document; strict CSP keeps everything self-hosted) ── */
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.ico { width: 1.2rem; height: 1.2rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+.ico-solid { fill: currentColor; stroke: none; }
+.ico-sm { width: 0.85rem; height: 0.85rem; vertical-align: -0.12em; }
+
+/* ── site header (create page): logo + wordmark, theme toggle ── */
+.site-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+.brand { display: inline-flex; align-items: flex-end; gap: 0.55rem; color: inherit; }
+.brand:hover { text-decoration: none; }
+.brand-mark { width: 22px; height: 31px; display: block; flex: 0 0 auto; overflow: visible; }
+.wordmark { font-family: "Baloo 2", system-ui, sans-serif; font-size: 21px; font-weight: 800; letter-spacing: -0.01em; line-height: 1; color: var(--text); transform: translateY(1px); }
+.wordmark .ember { color: var(--accent); }
+
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 34px; height: 34px; margin: 0; padding: 0;
+  background: var(--card); border: 1px solid var(--border); border-radius: 9px;
+  color: var(--muted); cursor: pointer; transition: color 0.15s ease, border-color 0.15s ease;
+}
+/* keep the card background on hover (don't inherit the base button's accent fill); just lift the border */
+.theme-toggle:hover:not(:disabled) { background: var(--card); color: var(--text); border-color: var(--accent); }
+.theme-toggle .ico { width: 1rem; height: 1rem; }
+/* the icon shows the CURRENT theme: moon in dark (default), sun in light — pure CSS, no JS DOM swap */
+.theme-toggle .i-sun { display: none; }
+.theme-toggle .i-moon { display: block; }
+:root[data-theme="light"] .theme-toggle .i-sun { display: block; }
+:root[data-theme="light"] .theme-toggle .i-moon { display: none; }
+
+/* ── hero (create) ── */
+.hero-title { font-size: 33px; font-weight: 700; letter-spacing: -0.022em; line-height: 1.12; margin: 0; color: var(--text); }
+.hero-sub { font-size: 16px; color: var(--muted); line-height: 1.5; max-width: 50ch; margin: 13px 0 22px; }
+
+/* ── feature strip (create) ── */
+.features { list-style: none; display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 24px; padding: 0; }
+.feature { flex: 1 1 0; min-width: 165px; display: flex; align-items: flex-start; gap: 11px; padding: 14px 15px; background: var(--card); border: 1px solid var(--border); border-radius: 0.8rem; }
+.feature > .ico { color: var(--accent); margin-top: 0.1rem; width: 1.2rem; height: 1.2rem; }
+.feature-name { font-weight: 600; font-size: 14px; line-height: 1.25; color: var(--text); }
+.feature-sub { font-size: 12.5px; color: var(--muted); margin-top: 0.2rem; line-height: 1.35; }
+
+/* ── panels (numbered cards used in create + success) ── */
+.card,
+.panel { background: var(--card); border: 1px solid var(--border); border-radius: 1rem; padding: 20px; }
+/* Plain block flow — spacing comes from each element's own margin (NOT a container `gap`, which would
+   stack on top of those margins). Adjacent cards (create's two panels, success's two share bars) sit 14px
+   apart, matching the design's gap-14 card group; the button/trustline/burn/again carry their own margins. */
+#bp-create { display: block; }
+.panel + .panel { margin-top: 14px; }
+.panel-head { display: flex; align-items: center; gap: 0.65rem; margin-bottom: 12px; }
+.badge { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--accent-soft); color: var(--chip-text); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; font-weight: 700; }
+.panel-title { font-weight: 600; font-size: 15px; color: var(--text); }
+.panel-head .meta { margin-left: auto; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; white-space: nowrap; color: var(--muted); }
+.panel-head .regen { margin-left: auto; }
+.hint { color: var(--muted); display: block; font-size: 13.5px; line-height: 1.5; margin: 0 0 12px; }
+.hint strong { color: var(--text); font-weight: 600; }
+
+/* ── form fields ── */
+textarea, input[type="text"], input[type="password"], input:not([type]) {
+  width: 100%; background: var(--card2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; font: inherit;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+textarea { resize: vertical; min-height: 118px; font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; line-height: 1.55; }
+textarea:focus, input:focus { outline: none; border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ── buttons ── */
+button {
+  background: var(--accent-fill); color: var(--on-accent); border: 0; border-radius: 0.7rem;
+  padding: 0.7rem 1.05rem; font: inherit; font-weight: 600; cursor: pointer; margin-top: 0.75rem;
+  transition: background 0.15s ease, filter 0.12s ease, transform 0.06s ease;
+}
+button:hover:not(:disabled) { background: var(--accent2); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled { cursor: not-allowed; opacity: 0.7; }
+
+/* primary call-to-action (Encrypt / Reveal): full-width, icon + label */
+.primary, button[type="submit"] {
+  display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%;
+  margin-top: 22px; padding: 15px 18px; border-radius: 12px; font-size: 15px; letter-spacing: 0.01em;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 10px 26px -10px var(--accent-soft);
+}
+.primary:disabled, button[type="submit"]:disabled { background: var(--card2); color: var(--faint); box-shadow: none; opacity: 1; }
+
+/* ghost / link-style buttons */
+.link-btn { display: inline-flex; align-items: center; gap: 0.4rem; background: none; color: var(--accent-text); border: 0; padding: 0; margin: 0; box-shadow: none; font-weight: 600; font-size: 14.5px; }
+.link-btn:hover:not(:disabled) { background: none; text-decoration: underline; }
+.regen { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0; padding: 0; background: none; box-shadow: none; color: var(--muted); font-size: 13px; font-weight: 500; }
+.regen:hover:not(:disabled) { background: none; color: var(--accent-text); }
+.regen .ico { width: 0.9rem; height: 0.9rem; }
+
+/* trust reassurance under the submit button, where doubt peaks */
+.trustline { display: flex; align-items: center; justify-content: center; gap: 0.4rem; font-size: 13px; color: var(--muted); margin: 13px 0 0; text-align: center; }
+.trustline .ico { color: var(--muted); }
+
+.error { color: var(--danger); font-size: 13.5px; margin: 0.6rem 0 0; }
+.warn { background: var(--warn-soft); border: 1px solid var(--warn-border); padding: 0.8rem 0.95rem; border-radius: 0.7rem; color: var(--text); font-size: 13.5px; line-height: 1.5; }
+.warn-inline { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 0; }
+.warn-inline .ico { color: var(--warn); margin-top: 0.05rem; }
+pre { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; background: var(--card2); border: 1px solid var(--border); padding: 1rem; border-radius: 0.7rem; font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; line-height: 1.6; }
+
+.row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.row button { margin-top: 0; }
+.row input { flex: 1; min-width: 12rem; }
+
+/* ── passphrase chips + list-locked autocomplete ──────────────────────────────
+   Chips are removable inside the create/reveal tag fields, or display-only on the success screen. */
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--accent-soft); border: 1px solid var(--accent-border); color: var(--chip-text);
+  border-radius: 9px; padding: 6px 8px 6px 11px; font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px; line-height: 1.2;
+}
+button.chip-x { display: inline-flex; align-items: center; justify-content: center; margin: 0; padding: 0; box-shadow: none; background: none; border: 0; color: var(--chip-text); opacity: 0.7; font-size: 15px; line-height: 1; font-weight: 700; cursor: pointer; }
+button.chip-x:hover:not(:disabled) { background: none; opacity: 1; }
+
+.combo { position: relative; }
+.suggest {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 5;
+  list-style: none; margin: 0; padding: 0.3rem;
+  background: var(--card); border: 1px solid var(--border); border-radius: 0.7rem;
+  max-height: 14rem; overflow-y: auto; box-shadow: 0 16px 36px -16px rgba(0, 0, 0, 0.55);
+}
+.suggest-item { padding: 0.45rem 0.6rem; border-radius: 0.45rem; cursor: pointer; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; }
+.suggest-item.active, .suggest-item:hover { background: var(--accent-soft); color: var(--chip-text); }
+
+/* tag field: chips live INSIDE a box that looks like an input, with a borderless cursor at the end */
+.tagfield { display: flex; flex-direction: column; width: 100%; background: var(--card2); border: 1px solid var(--border); border-radius: 12px; padding: 11px; min-height: 54px; cursor: text; transition: border-color 0.12s ease, box-shadow 0.12s ease; }
+.tagfield:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-soft); }
+.tagrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.taglist { display: contents; }
+.tagfield .taginput { flex: 1 1 7rem; min-width: 7rem; margin: 0; padding: 0.3rem 0.15rem; border: 0; border-radius: 0; background: none; color: var(--text); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; line-height: 1.2; }
+.tagfield .taginput::placeholder { color: var(--faint); }
+.tagfield .taginput:focus { outline: none; box-shadow: none; }
+
+/* live strength cue — right-aligned under the field */
+.strengthrow { display: flex; align-items: center; justify-content: flex-end; margin-top: 10px; }
+.strength { font-size: 13px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.strength.ok { color: var(--good); }
+.strength.weak { color: var(--warn); }
+.strength.bad { color: var(--danger); }
+
+/* ── success / share screen ──────────────────────────────────────────────────── */
+.done-head { display: flex; gap: 13px; align-items: flex-start; margin-bottom: 20px; }
+.done-check { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%; background: var(--good-soft); color: var(--good); }
+.done-check .ico { width: 1.2rem; height: 1.2rem; stroke-width: 2.2; }
+.done-title { font-weight: 600; font-size: 21px; letter-spacing: -0.01em; color: var(--text); }
+.done-sub { font-size: 14px; color: var(--muted); margin-top: 0.2rem; line-height: 1.55; text-wrap: balance; }
+.done-sub strong { color: var(--text); font-weight: 600; }
+#bp-share { display: block; }
+
+/* a unified input bar: a field (link or wrapping chips) + a copy button sharing one rounded outline */
+.iobox { display: flex; align-items: stretch; min-height: 3rem; background: var(--card2); border: 1px solid var(--border); border-radius: 0.7rem; overflow: hidden; }
+/* the readonly link input clears its own outline (line above), so surface focus on the bar instead */
+.iobox:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-soft); }
+.iobox-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.55rem 0.85rem; margin: 0; background: none; border: 0; }
+/* the `.mono` class (0,1,0) loses to the base `input[type=text]{font:inherit}` (0,1,1); this element+class
+   selector (0,1,1, declared later) wins, so the link actually renders in JetBrains Mono like the design. */
+input.iobox-field { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 0; font-size: 13.5px; font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+input.iobox-field:focus { box-shadow: none; }
+.iobox-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; margin: 0; padding: 0 0.95rem; min-width: 5.5rem; background: none; border: 0; border-left: 1px solid var(--border); border-radius: 0; color: var(--accent-text); font-weight: 600; font-size: 13px; white-space: nowrap; }
+.iobox-btn:hover:not(:disabled) { background: var(--accent-soft); }
+.iobox-btn .ico { width: 0.95rem; height: 0.95rem; }
+
+/* the passphrase as display-only chips inside the share bar */
+.phrase { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.phrase .chip { border-color: transparent; cursor: default; padding: 7px 12px; font-size: 13.5px; }
+
+/* burn = an optional destructive callout, on its own */
+.burn-callout { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 18px; padding: 15px 17px; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: 0.85rem; }
+.burn-copy { display: flex; align-items: flex-start; gap: 0.7rem; }
+.burn-copy .ico { color: var(--danger); margin-top: 0.1rem; }
+.burn-text { display: flex; flex-direction: column; gap: 0.15rem; }
+.burn-title { font-weight: 600; font-size: 14.5px; color: var(--text); }
+.burn-sub { font-size: 13px; color: var(--muted); line-height: 1.45; }
+button.danger { display: inline-flex; align-items: center; gap: 0.45rem; flex: 0 0 auto; margin: 0; padding: 0.6rem 1rem; background: var(--danger-fill); color: #fff; box-shadow: none; font-size: 13.5px; }
+button.danger:hover:not(:disabled) { background: var(--danger-fill); filter: brightness(0.92); }
+button.danger .ico { width: 0.9rem; height: 0.9rem; }
+
+.again-row { text-align: center; margin-top: 18px; }
+/* burned confirmation (creator revoked early): a centered logo + "Burned" + message; the shared
+   "Create another secret" button in .again-row sits below it. Mirrors designs/burned.html. */
+.burned { text-align: center; padding: 44px 0 0; }
+.burned-mark { display: block; width: 43px; height: 60px; margin: 0 auto 22px; overflow: visible; }
+.burned h2 { font-size: 21px; font-weight: 600; margin: 0 0 7px; }
+.burned p { max-width: 272px; margin: 0 auto; font-size: 14.5px; color: var(--muted); line-height: 1.55; }
+
+/* ── reveal / status / stats / terms (shared classes, restyled to the new tokens) ── */
+.cta { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 1rem; color: var(--accent-text); font-weight: 600; font-size: 14.5px; }
+.cta:hover { text-decoration: underline; }
+
+/* ── reveal screen (enter the passphrase) ── */
+#bp-psk h2, #bp-unsupported h2 { margin: 0 0 4px; }
+.lead { font-size: 14px; color: var(--muted); line-height: 1.55; margin: 0 0 18px; }
+.lead strong { color: var(--text); font-weight: 600; }
+.panel-label { font-size: 13px; color: var(--muted); }
+/* word-count pill, right-aligned in the panel head: amber "N / 7" until complete, then a green "✓ N" */
+.count-pill { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; font-weight: 600; padding: 4px 11px; border-radius: 999px; background: var(--accent-soft); color: var(--chip-text); white-space: nowrap; }
+.count-pill .ico { display: none; width: 13px; height: 13px; stroke-width: 2.4; }
+.count-pill.ok { background: var(--good-soft); color: var(--good); }
+.count-pill.ok .ico { display: block; }
+
+/* ── terms ── */
+.terms-sub { font-size: 13.5px; color: var(--faint); margin: 0 0 18px; }
+.terms-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 4px 22px 18px; }
+.terms-item { padding: 15px 0; }
+.terms-item + .terms-item { border-top: 1px solid var(--border); } /* hairline between sections */
+.terms-h { font-weight: 600; font-size: 14.5px; margin: 0 0 6px; color: var(--text); }
+.terms-b { font-size: 14px; color: var(--muted); line-height: 1.6; margin: 0; }
+.terms-b strong { color: var(--text); font-weight: 600; }
+.terms-card ul { margin: 9px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; color: var(--muted); }
+.terms-card li { font-size: 14px; color: var(--muted); line-height: 1.55; margin: 0; }
+.terms-abuse { margin: 17px 0 0; font-size: 13px; color: var(--faint); }
+.terms-abuse a { color: var(--accent-text); }
+
+/* ── 404 / not-found ── */
+.notfound { text-align: center; padding: 44px 0 0; }
+.notfound-code { font-family: "Baloo 2", system-ui, sans-serif; font-size: 70px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: var(--accent); margin-bottom: 16px; }
+.notfound h2 { margin: 0 0 7px; }
+.notfound-msg { max-width: 40ch; margin: 0 auto 20px; font-size: 14.5px; color: var(--muted); line-height: 1.55; text-wrap: balance; }
+
+/* ── revealed screen (the decrypted secret) ── */
+.codeblock { background: var(--card2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.codeblock-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 15px; border-bottom: 1px solid var(--border); background: var(--card); }
+.codeblock-meta { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.copy-secret { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; margin: 0; padding: 9px 15px; font-size: 13px; border-radius: 9px; }
+.copy-secret .ico { width: 15px; height: 15px; }
+.codeblock-body { position: relative; }
+/* the secret <pre> lives INSIDE the code block — drop the global pre chrome (bg/border/radius) */
+.codeblock pre { margin: 0; border: 0; background: none; border-radius: 0; padding: 15px 16px 22px; max-height: min(420px, 46vh); overflow: auto; font-size: 13.5px; line-height: 1.62; }
+/* soft fade at the bottom while the secret overflows and isn't scrolled to the end (JS toggles opacity) */
+.codeblock-fade { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; background: var(--card2); -webkit-mask-image: linear-gradient(to top, #000, transparent); mask-image: linear-gradient(to top, #000, transparent); pointer-events: none; opacity: 0; transition: opacity 0.15s ease; }
+
+.page-title { margin: 0 0 4px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 0; }
+.stat { background: var(--card); border: 1px solid var(--border); border-radius: 13px; padding: 16px; }
+.stat .num { display: block; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 25px; font-weight: 500; letter-spacing: -0.01em; color: var(--text); }
+.stat .lbl { display: block; color: var(--muted); font-size: 12.5px; margin-top: 5px; }
+/* per-stat number tints — the transparency palette (large text ⇒ AA at 3:1, so the brand accent is fine) */
+.stat .num.c-accent { color: var(--accent); }
+.stat .num.c-text { color: var(--text); }
+.stat .num.c-good { color: var(--good); }
+.stat .num.c-muted { color: var(--muted); }
+.stat .num.c-warn { color: var(--warn); }
+.stat .num.c-danger { color: var(--danger); }
+.stats-meta { margin-top: 14px; padding: 14px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 13px; display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }
+.stats-meta .mono { color: var(--text); }
+.stats-meta a { color: var(--accent-text); }
+
+/* ── footer (shared layout) ── */
+.footer { max-width: 42rem; margin: 2.25rem auto 0; padding: 1.25rem 1.25rem 2rem; color: var(--muted); font-size: 13px; text-align: center; }
+.footer a { color: var(--muted); }
+.footer a:hover { color: var(--accent-text); text-decoration: none; }
+.footer .dot { color: var(--border); margin: 0 0.5rem; }
+.footer .gh { white-space: nowrap; }
+.gh-mark { width: 0.9rem; height: 0.9rem; vertical-align: -0.16em; margin-right: 0.3rem; }
+
+@media (max-width: 30rem) {
+  main { padding-top: 2rem; }
+  .hero-title { font-size: 28px; }
+}

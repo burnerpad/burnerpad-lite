@@ -1,0 +1,31 @@
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # The crypto bundle is the crypto-js submodule. `submodules: recursive` fetches it with the
+      # repo-scoped GITHUB_TOKEN — which works once crypto-js is PUBLIC. While it is private, supply a
+      # token with read access here (e.g. `token: ${{ secrets.CRYPTO_JS_PAT }}`) or a deploy key.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          elixir-version: '1.18'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix test
+      # Re-run the vendored bundle's own conformance suite, so a bad submodule pin fails CI.
+      - run: mix test.crypto
+      # Unit-test the page driver's DOM-free Core (display / canonicalization / paste-cap / strength).
+      - run: mix test.core

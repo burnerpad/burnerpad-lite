@@ -1,0 +1,12 @@
+{
+  "name": "burnerpad-browser-smoke",
+  "private": true,
+  "type": "module",
+  "description": "Headless-browser smoke test for the Burnerpad crypto pages (dev/CI only; not part of the app).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

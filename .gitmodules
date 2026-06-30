@@ -1,0 +1,3 @@
+[submodule "priv/static/vendor/crypto-js"]
+	path = priv/static/vendor/crypto-js
+	url = https://github.com/burnerpad/crypto-js.git
