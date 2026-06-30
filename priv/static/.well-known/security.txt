@@ -5,3 +5,4 @@ Contact: mailto:security@burnerpad.com
 Expires: 2027-06-26T00:00:00.000Z
 Preferred-Languages: en
 Policy: https://github.com/burnerpad/burnerpad-lite/blob/main/SECURITY.md
+# This address is for SECURITY vulnerabilities. Abuse / illegal-content notices go to the abuse contact on /terms.
