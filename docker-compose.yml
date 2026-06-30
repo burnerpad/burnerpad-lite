@@ -1,0 +1,56 @@
+# Burnerpad — local origin behind a Cloudflare Tunnel.
+#
+#   user ──HTTPS──▶ Cloudflare edge ──tunnel──▶ cloudflared (host) ──▶ 127.0.0.1:4024 (nginx) ──▶ app:4000
+#
+# cloudflared dials OUT to Cloudflare, so NO inbound ports are opened on the host.
+# Nothing is published on a public interface — Docker can't bypass ufw because we never ask it to
+# expose anything except the loopback (127.0.0.1) port that cloudflared connects to.
+
+services:
+  app:
+    build: .                       # builds from the repo Dockerfile; or replace with: image: burnerpad:latest
+    restart: unless-stopped
+    expose:
+      - "4000"                     # internal-only — reachable by nginx over the 'internal' network.
+                                   # NOTE: there is deliberately NO `ports:` here, so the app is NOT on the
+                                   # host at all (stronger than 127.0.0.1:4000:4000). nginx reaches it as app:4000.
+    environment:
+      PORT: "4000"
+
+      # --- client IP — CRITICAL, or per-IP rate-limiting buckets ALL users as one (self-DoS) ---
+      REAL_IP_HEADER: "cf-connecting-ip"   # Cloudflare sets the true client IP in this header
+      TRUSTED_PROXIES: "172.28.0.0/16"     # trust nginx (on this subnet) so the app reads CF-Connecting-IP
+
+      # --- capacity: size this to the box's RAM (worst case ~ MAX_SECRETS x 64KB) ---
+      MAX_SECRETS: "20000"
+      # rate limits default to 240/min per IP · 30000/min global · 600/min ban-threshold — override here if needed.
+      # Operator identity (OPERATOR_NAME / ABUSE_EMAIL / JURISDICTION) defaults to Impulsa SLU / Andorra — fine
+      # for the canonical instance; a fork MUST override these.
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4000/stats.json"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "127.0.0.1:4024:4024"      # ONLY host loopback → cloudflared (on the host) reaches http://localhost:4024.
+                                   # Bound to 127.0.0.1, so it is NOT reachable from any external interface.
+    volumes:
+      - ./devops/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16    # pinned so TRUSTED_PROXIES above is a known, narrow CIDR
