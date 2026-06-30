@@ -57,7 +57,7 @@ defmodule Burnerpad.Config do
   # Operator-specific values for the /terms page. Default to this instance's operator (Impulsa SLU); a
   # fork MUST override these via OPERATOR_NAME / ABUSE_EMAIL / JURISDICTION to publish its own terms.
   def operator_name, do: Application.get_env(:burnerpad, :operator_name, "Impulsa SLU")
-  def abuse_email, do: Application.get_env(:burnerpad, :abuse_email, "abuse@burnerpad.com")
+  def abuse_email, do: Application.get_env(:burnerpad, :abuse_email, "abuse@burnerpad.io")
   def jurisdiction, do: Application.get_env(:burnerpad, :jurisdiction, "Andorra")
 
   defp int(key, env) do

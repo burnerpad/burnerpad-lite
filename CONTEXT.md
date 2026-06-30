@@ -227,7 +227,7 @@ so in-memory ciphertext is never paged to disk.
 | `RATE_LIMIT` | `240` | per-IP requests per minute |
 | `GLOBAL_CEILING` | `30000` | server-wide requests per minute |
 | `BAN_THRESHOLD` | `600` | per-IP requests/min that trigger an escalating ban |
-| `OPERATOR_NAME` / `ABUSE_EMAIL` / `JURISDICTION` | `Impulsa SLU` / `abuse@burnerpad.com` / `Andorra` | fill the `/terms` page (defaults to this instance's operator; a **fork must override**) |
+| `OPERATOR_NAME` / `ABUSE_EMAIL` / `JURISDICTION` | `Impulsa SLU` / `abuse@burnerpad.io` / `Andorra` | fill the `/terms` page (defaults to this instance's operator; a **fork must override**) |
 
 ---
 

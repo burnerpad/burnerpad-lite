@@ -10,7 +10,7 @@ git submodule under `priv/static/vendor/crypto-js`.
 2. Run `mix setup` once to fetch the crypto submodule + deps. Then `mix test` and `mix test.crypto` must
    pass.
 3. **No CLA.** You keep your copyright and license your contribution under this repo's existing license.
-4. **Never** open a public issue for a security vulnerability — email **security@burnerpad.com** instead.
+4. **Never** open a public issue for a security vulnerability — email **security@burnerpad.io** instead.
 
 ## License
 

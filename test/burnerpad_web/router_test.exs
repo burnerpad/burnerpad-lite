@@ -284,7 +284,7 @@ defmodule BurnerpadWeb.RouterTest do
     assert body =~ "Limitation of liability"
     # operator details are filled in by default (this instance), not bracketed placeholders
     assert body =~ "Impulsa SLU"
-    assert body =~ "abuse@burnerpad.com"
+    assert body =~ "abuse@burnerpad.io"
     refute body =~ "Template — not legal advice"
     refute body =~ "[abuse@your-domain]"
   end

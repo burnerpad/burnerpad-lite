@@ -5,7 +5,7 @@ research and commit to the safe-harbor terms below.
 
 ## Reporting a vulnerability
 
-**Email <security@burnerpad.com>.** Please do **not** open a public GitHub issue or pull request, or
+**Email <security@burnerpad.io>.** Please do **not** open a public GitHub issue or pull request, or
 disclose publicly, until we've shipped a fix and agreed on timing.
 
 A useful report includes: the affected commit/version (or the URL on a hosted instance); a clear

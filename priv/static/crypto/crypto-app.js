@@ -14,7 +14,7 @@
   // tested in isolation (test/crypto/core_test.mjs). The browser wires them to the DOM below; Node
   // `require()`s this file, gets `Core`, and never runs the browser code (the guard returns first).
   var Core = {
-    // DISPLAY only: drop the scheme + leading www. so a share link reads cleanly (burnerpad.com/s/…). The
+    // DISPLAY only: drop the scheme + leading www. so a share link reads cleanly (burnerpad.io/s/…). The
     // FULL url is what is actually copied/opened — this is presentation, never what authorizes a request.
     displayUrl: function (u) { return String(u).replace(/^https?:\/\//i, "").replace(/^www\./i, ""); },
     // Canonicalize a passphrase word to the form the key was derived from: trimmed + lowercased.

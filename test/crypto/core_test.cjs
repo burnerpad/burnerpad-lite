@@ -10,10 +10,10 @@ const assert = require("node:assert/strict");
 const Core = require("../../priv/static/crypto/crypto-app.js");
 
 test("displayUrl strips scheme + leading www for display (the full URL is copied separately)", () => {
-  assert.equal(Core.displayUrl("https://burnerpad.com/s/ABC123"), "burnerpad.com/s/ABC123");
-  assert.equal(Core.displayUrl("http://www.burnerpad.com/s/ABC123"), "burnerpad.com/s/ABC123");
+  assert.equal(Core.displayUrl("https://burnerpad.io/s/ABC123"), "burnerpad.io/s/ABC123");
+  assert.equal(Core.displayUrl("http://www.burnerpad.io/s/ABC123"), "burnerpad.io/s/ABC123");
   assert.equal(Core.displayUrl("https://www.example.org/s/x"), "example.org/s/x");
-  assert.equal(Core.displayUrl("burnerpad.com/s/x"), "burnerpad.com/s/x"); // already clean
+  assert.equal(Core.displayUrl("burnerpad.io/s/x"), "burnerpad.io/s/x"); // already clean
   assert.equal(Core.displayUrl("https://host/www.keep"), "host/www.keep"); // only a LEADING www. is dropped
 });
 

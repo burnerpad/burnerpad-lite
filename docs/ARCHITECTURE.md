@@ -534,11 +534,11 @@ database path** (no database).
 | `GLOBAL_CEILING` | `30000` | server-wide requests per minute |
 | `BAN_THRESHOLD` | `600` | per-IP requests/min that trigger an escalating ban |
 | `OPERATOR_NAME` | `Impulsa SLU` | shown on `/terms` (default = this instance's operator; **a fork must override**) |
-| `ABUSE_EMAIL` | `abuse@burnerpad.com` | abuse/removal contact on `/terms` |
+| `ABUSE_EMAIL` | `abuse@burnerpad.io` | abuse/removal contact on `/terms` |
 | `JURISDICTION` | `Andorra` | governing law on `/terms` |
 
 **Terms / Acceptable-Use.** The `/terms` page renders the operator's terms from the three variables above,
-which **default to this instance's operator** (Impulsa SLU / Andorra / abuse@burnerpad.com) so the live
+which **default to this instance's operator** (Impulsa SLU / Andorra / abuse@burnerpad.io) so the live
 page is filled in — there is no "template" banner on the page. **A fork must override `OPERATOR_NAME` /
 `ABUSE_EMAIL` / `JURISDICTION`** or it will publish Impulsa SLU's terms as its own. The repo ships
 [`TERMS.template.md`](../TERMS.template.md) with the same wording plus operator legal notes. This is a

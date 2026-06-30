@@ -88,7 +88,7 @@ lawyer review it before running a public instance.
 | `GLOBAL_CEILING` | `30000` | server-wide requests per minute |
 | `BAN_THRESHOLD` | `600` | per-IP requests/min that trigger an escalating ban |
 | `OPERATOR_NAME` | `Impulsa SLU` | shown on `/terms` (default is this instance's operator; **a fork must override**) |
-| `ABUSE_EMAIL` | `abuse@burnerpad.com` | abuse/removal contact on `/terms` |
+| `ABUSE_EMAIL` | `abuse@burnerpad.io` | abuse/removal contact on `/terms` |
 | `JURISDICTION` | `Andorra` | governing law on `/terms` |
 
 There is **no `SECRET_KEY_BASE`** (no sessions/cookies) and **no database**.
