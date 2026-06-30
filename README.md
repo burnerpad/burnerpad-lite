@@ -1,8 +1,8 @@
 # Burnerpad
 
-A minimal, anonymous, **end-to-end-encrypted one-time-secret sharing** service. Paste a secret, get a
-link, the recipient opens it **once**, and it's destroyed. The server never sees your plaintext, stores
-nothing on disk, and keeps every secret in memory only.
+A minimal, no-accounts, **end-to-end-encrypted one-time-secret sharing** service. Paste a secret, get a
+link, the recipient opens it **once**, and it's destroyed. The server never sees your plaintext, never
+writes your secret to disk, and keeps every secret in memory only.
 
 - **End-to-end encrypted** — the browser encrypts; the key never reaches the server.
 - **One-time** — burn-on-read, exactly once.

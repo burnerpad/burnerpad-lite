@@ -8,7 +8,7 @@
 
 ## 1. What this is
 
-A minimal, anonymous, **end-to-end-encrypted one-time-secret sharing** service (**AGPL-3.0-or-later**).
+A minimal, no-accounts, **end-to-end-encrypted one-time-secret sharing** service (**AGPL-3.0-or-later**).
 You paste a secret (a password, an API key, a `.env` block); the **browser encrypts it**; the server
 stores only **opaque ciphertext it cannot read**; the recipient opens it **once** and it is destroyed
 (burn-on-read), or it expires on a TTL.

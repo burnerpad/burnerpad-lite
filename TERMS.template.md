@@ -20,7 +20,7 @@
 
 ## 1. What this is
 
-A free, anonymous, no-accounts, end-to-end-encrypted one-time secret sharing service operated by
+A free, no-accounts, end-to-end-encrypted one-time secret sharing service operated by
 **[operator name]**. Your secret is encrypted in your browser; we store only opaque ciphertext. The
 decryption key never reaches our server — it stays in your browser and is rebuilt from a passphrase you
 share on a separate channel, and the link itself carries no key. We therefore **cannot read, decrypt,

@@ -263,7 +263,7 @@ defmodule BurnerpadWeb.Pages do
     <div class="terms-card">
       <div class="terms-item">
         <h3 class="terms-h">1. What this is</h3>
-        <p class="terms-b">A free, anonymous, no-accounts, end-to-end-encrypted one-time secret sharing service operated by #{op}. Your secret is encrypted in your browser; we store only opaque ciphertext. The decryption key never reaches our server — it stays in your browser and is rebuilt from a passphrase you share on a separate channel, and the link itself carries no key. We therefore <strong>cannot read, decrypt, scan, verify, index, or proactively moderate</strong> what you share.</p>
+        <p class="terms-b">A free, no-accounts, end-to-end-encrypted one-time secret sharing service operated by #{op}. Your secret is encrypted in your browser; we store only opaque ciphertext. The decryption key never reaches our server — it stays in your browser and is rebuilt from a passphrase you share on a separate channel, and the link itself carries no key. We therefore <strong>cannot read, decrypt, scan, verify, index, or proactively moderate</strong> what you share.</p>
       </div>
       <div class="terms-item">
         <h3 class="terms-h">2. No warranty</h3>
