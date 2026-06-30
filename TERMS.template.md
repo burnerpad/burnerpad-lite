@@ -79,9 +79,16 @@ IP address, or refuse service, for any reason — including suspected abuse.
 
 ## 9. Privacy
 
-We require no account and cannot read your secrets, keys, or passphrases. We do process client IP
-addresses to apply rate limiting and abuse controls, and we log abuse reports — so the service is not
-"zero-log".
+We require no account, cannot read your secrets, keys, or passphrases, and never link your IP address to a
+secret. We process client IP addresses only to apply rate limiting and abuse controls; our lawful basis is
+our legitimate interest in keeping the service available and preventing abuse (GDPR / your local
+data-protection law, Art. 6(1)(f) or equivalent). This processing is transient — rate-limit counters reset
+each minute, temporary bans last at most 24 hours, we keep no persistent IP-to-secret log, and operational
+logs are rotated within a short, bounded window. The data controller is **[operator name]** (**[your
+jurisdiction]**); for privacy questions or to exercise your rights (access, erasure, objection) contact
+**[abuse@your-domain]**, and you may lodge a complaint with your data-protection supervisory authority. If
+you put a CDN/edge provider (e.g. Cloudflare) in front, it processes connection data (incl. the client IP)
+as your processor — name it here. The service is therefore not "zero-log".
 
 ## 10. Changes & governing law
 

@@ -305,7 +305,7 @@ defmodule BurnerpadWeb.Pages do
       </div>
       <div class="terms-item">
         <h3 class="terms-h">9. Privacy</h3>
-        <p class="terms-b">We require no account and cannot read your secrets, keys, or passphrases. We do process client IP addresses to apply rate limiting and abuse controls, and we log abuse reports — so the service is not "zero-log".</p>
+        <p class="terms-b">We require no account, cannot read your secrets, keys, or passphrases, and never link your IP address to a secret. We process client IP addresses only to apply rate limiting and abuse controls; our lawful basis is our legitimate interest in keeping the service available and preventing abuse (GDPR / Andorra Qualified Law 29/2021, Art. 6(1)(f)). This processing is transient — rate-limit counters reset each minute, temporary bans last at most 24 hours, we keep no persistent IP-to-secret log, and operational logs are rotated within a short, bounded window. The data controller is #{op} (#{juris}); for privacy questions or to exercise your rights (access, erasure, objection) email <a href="mailto:#{email}">#{email}</a>, and you may lodge a complaint with your data-protection supervisory authority (in Andorra, the APDA). We use Cloudflare to deliver and protect the service; it processes connection data (including your IP) as our processor. The service is therefore not "zero-log".</p>
       </div>
       <div class="terms-item">
         <h3 class="terms-h">10. Changes &amp; governing law</h3>
