@@ -79,6 +79,21 @@ defmodule Burnerpad.Store do
 
   def burn(_, _), do: :error
 
+  @doc """
+  Operator takedown: delete a secret by id **without** the management token, for actioning an abuse /
+  illegal-content notice (DSA Art. 16). Counts under its own `:purged` metric — NOT `:revealed` — so the
+  public transparency stats are not skewed by a takedown. `:ok` if a row was removed, else `:gone`.
+  """
+  def purge(id) do
+    with {:ok, id} <- normalize(id),
+         [_row] <- :ets.take(@table, id) do
+      bump(:purged)
+      :ok
+    else
+      _ -> :gone
+    end
+  end
+
   @doc "Live secret count."
   def count, do: :ets.info(@table, :size)
 
@@ -103,6 +118,7 @@ defmodule Burnerpad.Store do
       created: ctr(:created),
       revealed: ctr(:revealed),
       burned: ctr(:burned),
+      purged: ctr(:purged),
       expired: ctr(:expired),
       started_at: started,
       uptime_seconds: max(now - started, 0)

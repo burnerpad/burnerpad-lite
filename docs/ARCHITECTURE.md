@@ -437,6 +437,13 @@ single host owns a whole `/64`, so per-address keying would let it rotate freely
 All abuse tables are capped and swept, so IP rotation cannot grow memory without bound; the `MAX_SECRETS`
 cap (§6) is the final backstop.
 
+**Operator takedown (notice-and-action).** On a valid abuse / illegal-content notice (sent to the abuse
+contact on `/terms`), extract the secret id from the reported `/s/:id` or `/api/secrets/:id` URL and purge
+it: `bin/burnerpad rpc 'Burnerpad.Store.purge("THEID")'` (or `Burnerpad.Store.purge/1` from an attached
+`iex`). It deletes by id **without** the management token and counts under the `:purged` stat (not
+`:revealed`, so transparency numbers stay honest). Because secrets are burn-on-read and expire within 24 h,
+a reported secret is usually already gone by the time a notice arrives.
+
 **Resolving the real client IP.** Behind a reverse proxy, the client IP comes from a configurable header
 (`REAL_IP_HEADER`, default `cf-connecting-ip`), but **only when the socket peer is a configured trusted
 proxy** — otherwise the header is ignored and the raw socket peer is used. This prevents an attacker who

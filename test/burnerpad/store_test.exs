@@ -48,6 +48,14 @@ defmodule Burnerpad.StoreTest do
     assert :gone = Store.reveal(id)
   end
 
+  test "purge deletes a secret by id without the management token (operator takedown)" do
+    {:ok, id, _mgmt} = Store.create(<<1, 2>>)
+    assert :ok = Store.purge(id)
+    assert :gone = Store.reveal(id)
+    assert :gone = Store.purge(id)
+    assert Store.metrics().purged >= 1
+  end
+
   test "ids are case-insensitive and tolerate dashes and Crockford aliases" do
     {:ok, id, _} = Store.create(<<7>>)
     # lower-case + a dash in the middle still resolves to the same secret
