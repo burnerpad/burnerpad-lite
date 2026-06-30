@@ -66,8 +66,10 @@ or guarantee user content and are not responsible for it.
 
 ## 7. Reporting & removal
 
-Because we cannot read content, moderation is reactive. To report abuse or illegal material, send the
-secret's link or ID to **[abuse@your-domain]**. We may remove (purge) a reported secret by its ID. We
+Because we cannot read content, moderation is reactive. To report abuse or illegal material, email
+**[abuse@your-domain]** with: (a) the secret's exact link or ID; (b) a clear explanation of why it is
+illegal or breaches the acceptable-use list above; (c) your name and a contact email; and (d) a statement
+that your report is accurate and made in good faith. We may remove (purge) a reported secret by its ID. We
 cannot retrieve or disclose content we are unable to decrypt.
 
 ## 8. Suspension, banning & rate limiting
