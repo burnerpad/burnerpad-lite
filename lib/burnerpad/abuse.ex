@@ -93,17 +93,17 @@ defmodule Burnerpad.Abuse do
       count > Config.get(:ban_threshold) ->
         dur = ban!(key, now)
         ametric(:banned)
-        Logger.warning("abuse key=#{key} win=#{count}/#{sec(win)}s -> BAN #{sec(dur)}s")
+        Logger.warning("abuse win=#{count}/#{sec(win)}s -> BAN #{sec(dur)}s")
         {:banned, dur}
 
       count > Config.get(:rate_limit) ->
         ametric(:rate_limited)
-        Logger.warning("abuse key=#{key} win=#{count}/#{sec(win)}s RATE_LIMITED")
+        Logger.warning("abuse win=#{count}/#{sec(win)}s RATE_LIMITED")
         {:rate_limited, ws + win - now}
 
       gcount > Config.get(:global_ceiling) ->
         ametric(:global)
-        Logger.warning("abuse GLOBAL ceiling #{gcount}/#{sec(win)}s (key=#{key})")
+        Logger.warning("abuse GLOBAL ceiling #{gcount}/#{sec(win)}s")
         {:global, ws + win - now}
 
       true ->
