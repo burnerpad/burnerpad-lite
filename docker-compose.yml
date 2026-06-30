@@ -10,6 +10,7 @@ services:
   app:
     build: .                       # builds from the repo Dockerfile; or replace with: image: burnerpad:latest
     restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }  # bound on-disk log retention
     expose:
       - "4000"                     # internal-only — reachable by nginx over the 'internal' network.
                                    # NOTE: there is deliberately NO `ports:` here, so the app is NOT on the
@@ -38,6 +39,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }  # bound on-disk log retention
     depends_on:
       - app
     ports:
