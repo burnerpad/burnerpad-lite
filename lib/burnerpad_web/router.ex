@@ -13,7 +13,7 @@ defmodule BurnerpadWeb.Router do
   use Plug.ErrorHandler
   require Logger
   alias Burnerpad.{Abuse, Config, Store}
-  alias BurnerpadWeb.{ClientIP, Pages, SecurityHeaders}
+  alias BurnerpadWeb.{Pages, SecurityHeaders}
 
   plug(Plug.RequestId)
   plug(Plug.Logger)
@@ -115,7 +115,9 @@ defmodule BurnerpadWeb.Router do
 
   # Non-destructive abuse flag (always 200, even for unknown ids — no existence oracle).
   post "/s/:id/report" do
-    Logger.warning("report: secret #{inspect(id)} reported by #{ClientIP.get(conn)}")
+    # Log only the id (so an operator can purge-by-id on a valid notice) — never the reporter's IP
+    # alongside it, which would persist an IP↔secret-id link the design deliberately avoids.
+    Logger.warning("report: secret #{inspect(id)} reported")
     json(conn, 200, %{status: "reported"})
   end
 
