@@ -207,15 +207,72 @@ does not reuse it. Review the actual policy in the Tailscale admin UI before boo
 
 ## Configure Cloudflare
 
-Create a named Cloudflare Tunnel. Also create a separate read-only Rulesets API token scoped to the
-production zone; it lets routine deployment fail closed if the required health/static protection drifts.
-Store these values only in the gitignored secrets file:
+Create a named Cloudflare Tunnel. The deployment needs three distinct Cloudflare values; do not confuse or
+reuse them:
+
+- the **Tunnel token** authenticates the `cloudflared` connector;
+- the **Zone ID** identifies the one production domain to audit; and
+- a dedicated **read-only Rulesets API token** lets routine deployment detect rate-limit policy drift.
+
+The Rulesets token is not a Tunnel token, Global API Key, Origin CA key, or general-purpose account token.
+It is deliberately unable to edit the zone.
+
+### Obtain the production Zone ID
+
+1. Sign in to the [Cloudflare dashboard](https://dash.cloudflare.com/).
+2. Open **Domains** and select the production domain (`burnerpad.io` for the official deployment).
+3. On the domain's **Overview** page, scroll to the **API** section.
+4. Copy **Zone ID**. Do not copy the adjacent Account ID.
+
+Cloudflare also documents this path in
+[Find account and zone IDs](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/).
+The deploy preflight requires the Zone ID's exact 32-character lowercase hexadecimal form.
+
+### Create the read-only Rulesets audit token
+
+1. In the Cloudflare dashboard, open **My Profile** → **API Tokens**.
+2. Select **Create Token**, then **Create Custom Token**. Do not use **Read All Resources**.
+3. Give it a purpose-specific name such as `Burnerpad deployment ruleset audit`.
+4. Add exactly this permission:
+
+   | Scope | Permission | Access |
+   |---|---|---|
+   | Zone | Zone WAF | Read |
+
+5. Under **Zone Resources**, select **Include** → **Specific zone** → the production domain. Do not grant
+   access to all zones.
+6. Leave account-level, DNS, Tunnel, and write/edit permissions absent. Add an expiry or client-IP filter
+   only when there is an operational plan to rotate the token before expiry and the operator has stable
+   egress; otherwise either restriction can unexpectedly block a deployment.
+7. Select **Continue to summary**, verify the one-zone/read-only scope, and select **Create Token**.
+8. Copy the token immediately. Cloudflare displays the secret only once.
+
+Cloudflare's [token creation guide](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)
+documents the dashboard flow. `Zone WAF Read` is sufficient for the Rulesets entry-point GET used by the
+deployment; see Cloudflare's
+[zone custom-ruleset API documentation](https://developers.cloudflare.com/waf/custom-rules/custom-rulesets/).
+Do not broaden the permission if the audit returns an error—first verify that the token is active, scoped
+to the correct zone, and that the copied Zone ID is the ID for that same domain.
+
+### Store the Cloudflare values
+
+Store all three values only in the gitignored, operator-local `ops/group_vars/all/secrets.yml`:
 
 ```yaml
 cloudflare_tunnel_token: "eyJ..."
 cloudflare_zone_id: "0123456789abcdef0123456789abcdef"
 cloudflare_rulesets_read_token: "read-only-zone-rulesets-token"
 ```
+
+Edit the file directly with a local editor; never put the real token in a shell command, command-line
+environment assignment, chat, issue, screenshot, workflow secret, or commit. If the file is plaintext,
+keep it mode `0600`; if it is Vault-encrypted, use `ansible-vault edit` rather than decrypting it beside the
+repository. The release workflow does not need any Cloudflare credential.
+
+The deploy first validates the values and calls the exact read-only
+`/zones/{zone_id}/rulesets/phases/http_ratelimit/entrypoint` endpoint. This happens before the running app
+is replaced. If a token is exposed, revoke it in Cloudflare, create another token with the same narrow
+scope, and replace only `cloudflare_rulesets_read_token` in the local secrets file.
 
 Do not run Cloudflare's host installer; Compose runs the independently built and attested tunnel image.
 After the first connector is healthy, publish an application route:
