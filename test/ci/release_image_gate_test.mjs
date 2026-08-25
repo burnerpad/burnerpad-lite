@@ -44,6 +44,19 @@ assert.doesNotMatch(buildSection, /:main/);
 assert.match(release, /imagetools create --prefer-index=false --tag "\$IMAGE:main"/);
 assert.match(release, /test "\$promoted_digest" = "\$DIGEST"/);
 
+const sourceEvidenceSection = release.slice(
+  release.indexOf("- name: Verify and collect the source release evidence"),
+  release.indexOf("- name: Archive the source release, SPDX SBOM, and attestation"),
+);
+assert.match(sourceEvidenceSection, /gh attestation verify "\$archive"/);
+assert.match(sourceEvidenceSection, /--bundle "\$ATTESTATION_BUNDLE"/);
+assert.match(sourceEvidenceSection, /--predicate-type https:\/\/spdx\.dev\/Document\/v2\.3/);
+assert.match(
+  sourceEvidenceSection,
+  /--cert-identity "https:\/\/github\.com\/\$GITHUB_REPOSITORY\/\.github\/workflows\/release\.yml@refs\/heads\/main"/,
+);
+assert.match(sourceEvidenceSection, /--deny-self-hosted-runners/);
+
 for (const source of [release, deploy]) {
   assert.match(source, /--predicate-type https:\/\/burnerpad\.io\/attestations\/trivy\/v1/);
 }
