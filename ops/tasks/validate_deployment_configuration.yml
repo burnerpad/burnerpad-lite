@@ -1,0 +1,139 @@
+---
+# Shared by the production deployment and its regression test. Capability-bearing values remain under
+# no_log; each task name identifies only the invalid field so operators can fix it without exposing any
+# value or unrelated secret in Ansible output.
+
+- name: Validate cloudflare_tunnel_token
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - cloudflare_tunnel_token | default('', true) | length > 20
+      - "'CHANGE_ME' not in (cloudflare_tunnel_token | default('', true) | upper)"
+    fail_msg: >-
+      Set a replacement Cloudflare Tunnel token in the gitignored group_vars/all/secrets.yml.
+  no_log: true
+
+- name: Validate cloudflare_zone_id
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - (cloudflare_zone_id | default('', true)) is match('^[0-9a-f]{32}$')
+    fail_msg: >-
+      Set the matching 32-character lowercase Cloudflare Zone ID in the gitignored
+      group_vars/all/secrets.yml.
+  no_log: true
+
+- name: Validate cloudflare_rulesets_read_token
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - cloudflare_rulesets_read_token | default('', true) | length > 20
+      - "'CHANGE_ME' not in (cloudflare_rulesets_read_token | default('', true) | upper)"
+    fail_msg: >-
+      Set a replacement read-only Cloudflare Rulesets token in the gitignored
+      group_vars/all/secrets.yml.
+  no_log: true
+
+- name: Validate heartbeat_url
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - (heartbeat_url | default('', true) | ansible.builtin.urlsplit('scheme')) == 'https'
+      - heartbeat_url | default('', true) | ansible.builtin.urlsplit('hostname') | default('', true) | length > 0
+      - heartbeat_url | default('', true) | ansible.builtin.urlsplit('path') | default('', true) | length > 1
+      - heartbeat_url | default('', true) | ansible.builtin.urlsplit('username') | default('', true) | length == 0
+      - heartbeat_url | default('', true) | ansible.builtin.urlsplit('password') | default('', true) | length == 0
+      - heartbeat_url | default('', true) | ansible.builtin.urlsplit('fragment') | default('', true) | length == 0
+      - not ((heartbeat_url | default('', true)) is search('[\\x00-\\x20\\x7f]'))
+    fail_msg: >-
+      Set an HTTPS heartbeat_url without credentials, a fragment, or literal whitespace/control
+      characters in the gitignored group_vars/all/secrets.yml.
+  no_log: true
+
+- name: Validate public operator_name
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - operator_name | default('', true) | length > 0
+      - operator_name | default('', true) | length <= 254
+      - (operator_name | default('', true) | trim) == (operator_name | default('', true))
+      - not ((operator_name | default('', true)) is search('[\\x00-\\x1f\\x7f]'))
+      - "'CHANGE_ME' not in (operator_name | default('', true) | upper)"
+      - "'CHANGE-ME' not in (operator_name | default('', true) | upper)"
+      - not (operator_name | default('', true) | lower).endswith('.invalid')
+    fail_msg: >-
+      operator_name is missing or invalid in the gitignored group_vars/all/secrets.yml.
+
+- name: Validate public abuse_email
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - abuse_email | default('', true) | length <= 254
+      - (abuse_email | default('', true) | trim) == (abuse_email | default('', true))
+      - (abuse_email | default('', true)) is match('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$')
+      - not (abuse_email | default('', true) | lower).endswith('.invalid')
+    fail_msg: >-
+      abuse_email is missing or invalid in the gitignored group_vars/all/secrets.yml.
+
+- name: Validate public jurisdiction
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - jurisdiction | default('', true) | length > 0
+      - jurisdiction | default('', true) | length <= 254
+      - (jurisdiction | default('', true) | trim) == (jurisdiction | default('', true))
+      - not ((jurisdiction | default('', true)) is search('[\\x00-\\x1f\\x7f]'))
+      - "'CHANGE_ME' not in (jurisdiction | default('', true) | upper)"
+      - "'CHANGE-ME' not in (jurisdiction | default('', true) | upper)"
+      - not (jurisdiction | default('', true) | lower).endswith('.invalid')
+    fail_msg: >-
+      jurisdiction is missing or invalid in the gitignored group_vars/all/secrets.yml.
+
+- name: Validate public security_email
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - security_email | default('', true) | length <= 254
+      - (security_email | default('', true) | trim) == (security_email | default('', true))
+      - (security_email | default('', true)) is match('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$')
+      - not (security_email | default('', true) | lower).endswith('.invalid')
+    fail_msg: >-
+      security_email is missing or invalid in the gitignored group_vars/all/secrets.yml.
+
+- name: Validate public security_policy_url
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - security_policy_url | default('', true) | length <= 2048
+      - (security_policy_url | default('', true) | trim) == (security_policy_url | default('', true))
+      - (security_policy_url | default('', true) | ansible.builtin.urlsplit('scheme')) == 'https'
+      - security_policy_url | default('', true) | ansible.builtin.urlsplit('hostname') | default('', true) | length > 0
+      - security_policy_url | default('', true) | ansible.builtin.urlsplit('username') | default('', true) | length == 0
+      - security_policy_url | default('', true) | ansible.builtin.urlsplit('password') | default('', true) | length == 0
+      - security_policy_url | default('', true) | ansible.builtin.urlsplit('fragment') | default('', true) | length == 0
+      - not ((security_policy_url | default('', true)) is search('[\\x00-\\x20\\x7f]'))
+      - not (security_policy_url | default('', true) | ansible.builtin.urlsplit('hostname') | lower).endswith('.invalid')
+      - "'CHANGE_ME' not in (security_policy_url | default('', true) | upper)"
+      - "'CHANGE-ME' not in (security_policy_url | default('', true) | upper)"
+    fail_msg: >-
+      security_policy_url is missing or invalid in the gitignored group_vars/all/secrets.yml.
+
+- name: Validate public_origin
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - public_origin | default('', true) | length <= 2048
+      - (public_origin | default('', true) | trim) == (public_origin | default('', true))
+      - (public_origin | default('', true) | ansible.builtin.urlsplit('scheme')) == 'https'
+      - public_origin | default('', true) | ansible.builtin.urlsplit('hostname') | default('', true) | length > 0
+      - public_origin | default('', true) | ansible.builtin.urlsplit('username') | default('', true) | length == 0
+      - public_origin | default('', true) | ansible.builtin.urlsplit('password') | default('', true) | length == 0
+      - public_origin | default('', true) | ansible.builtin.urlsplit('path') | default('', true) | length == 0
+      - public_origin | default('', true) | ansible.builtin.urlsplit('query') | default('', true) | length == 0
+      - public_origin | default('', true) | ansible.builtin.urlsplit('fragment') | default('', true) | length == 0
+      - not ((public_origin | default('', true)) is search('[\\x00-\\x20\\x7f]'))
+      - not (public_origin | default('', true) | ansible.builtin.urlsplit('hostname') | lower).endswith('.invalid')
+      - "'CHANGE_ME' not in (public_origin | default('', true) | upper)"
+      - "'CHANGE-ME' not in (public_origin | default('', true) | upper)"
+    fail_msg: >-
+      public_origin is missing or invalid in the gitignored group_vars/all/secrets.yml.

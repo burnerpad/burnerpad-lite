@@ -94,6 +94,18 @@ cp inventory.example.ini inventory.ini
 install -m 600 group_vars/all/secrets.example.yml group_vars/all/secrets.yml
 ```
 
+Create `secrets.yml` only once. If it already exists, edit it in place—do not copy the example over it or
+you will overwrite working credentials. Fill every field in that local file before its corresponding
+step. It deliberately contains two kinds of deployment input:
+
+- capability-bearing secrets: the Tunnel and Rulesets tokens, Tailscale key, and heartbeat URL; and
+- public but instance-specific metadata: the legal operator, contact addresses, jurisdiction, policy URL,
+  and public origin.
+
+The second group is local not because it is confidential, but because committing one operator's identity
+would let a fork accidentally deploy under that operator's name. The public OCI image contains neither
+group; Ansible supplies them to the container at runtime.
+
 `install-requirements-locked.sh` downloads each direct and transitive Galaxy input once, rejects any
 missing, extra, or checksum-mismatched archive, and installs only those verified local archives with
 dependency resolution disabled. It stages a complete fresh dependency tree before replacing the generated
@@ -302,20 +314,28 @@ with a forged `CF-Connecting-IP`, and never prints or returns either address.
 
 ## Configure identity and capacity
 
-Edit committed `ops/group_vars/all/vars.yml`; every shipped value is intentionally invalid until replaced:
+Add the public identity for this one deployment to the existing gitignored
+`ops/group_vars/all/secrets.yml`. For the official `burnerpad.io` service, the block is:
 
 ```yaml
-operator_name: "Your legal operator"
-abuse_email: "abuse@your-domain.example"
-jurisdiction: "Your jurisdiction"
-security_email: "security@your-domain.example"
-security_policy_url: "https://your-domain.example/security-policy"
-public_origin: "https://burnerpad.your-domain.example"
+operator_name: "Impulsa SLU"
+abuse_email: "abuse@burnerpad.io"
+jurisdiction: "Andorra"
+security_email: "security@burnerpad.io"
+security_policy_url: "https://github.com/burnerpad/burnerpad-lite/blob/main/SECURITY.md"
+public_origin: "https://burnerpad.io"
 ```
 
-Size `MAX_SECRETS`, byte budget, row budget, memory, and CPU together. The payload floor is roughly
+These values remain runtime configuration. They are not Docker build arguments, labels, or files copied
+into the image. Another operator can pull the same immutable image and supply its own values through these
+environment-variable names; an operator using this Ansible deployment changes only its local
+`secrets.yml`.
+
+Edit committed `ops/group_vars/all/vars.yml` only when changing reusable capacity or host defaults. Size
+`MAX_SECRETS`, byte budget, row budget, memory, and CPU together. The payload floor is roughly
 `MAX_SECRETS × 64 KiB`, before BEAM/ETS overhead; leave material RAM for the OS and tunnel. The default
 10,000 rows / 1,500 MB app cap is intended for a 2 GB host, with a 2% per-source byte and row ceiling.
+
 For larger hosts, use the measured 4/8/12/16 GiB starting points and caveats in
 [`docs/CAPACITY_PLANNING.md`](docs/CAPACITY_PLANNING.md), then rerun its constrained matrix on the intended
 VPS provider before raising the limit.
@@ -327,9 +347,11 @@ The generated Compose environment currently overrides `MAX_SECRETS`, `GLOBAL_CRE
 greater than `MAX_SECRETS × 64 KiB`, and row budget no greater than `MAX_SECRETS`. Do not use `0` to mean
 unlimited: invalid or out-of-range production configuration refuses to boot.
 
-Replace every operator placeholder and have the rendered Terms/Acceptable-Use wording and linked security
-policy reviewed for the actual operator and jurisdiction before launch. The production image refuses the
-shipped `.invalid`/`CHANGE_ME` identity values; that technical check is not legal review.
+Replace every operator placeholder in the local `secrets.yml` and have the rendered
+Terms/Acceptable-Use wording and linked security policy reviewed for the actual operator and jurisdiction
+before launch. The deployment preflight names an invalid public field without printing any value. Each
+capability task identifies its field but keeps the value fully censored. The production image independently
+refuses `.invalid`/`CHANGE_ME` identity values; those technical checks are not legal review.
 
 The production app also requires a full source SHA, exact OCI digest, and a runtime Erlang cookie. Do not
 put those in inventory: the release/deploy process derives the first two and generates a fresh cookie on

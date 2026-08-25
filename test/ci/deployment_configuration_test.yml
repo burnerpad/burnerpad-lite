@@ -1,0 +1,26 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Impulsa SLU
+
+- name: Exercise the production deployment configuration preflight
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - "{{ playbook_dir }}/../../ops/group_vars/all/vars.yml"
+  vars:
+    # Test-only capability material. Production values remain in the ignored secrets.yml.
+    cloudflare_tunnel_token: "TEST_ONLY_TUNNEL_TOKEN_1234567890"
+    cloudflare_zone_id: "0123456789abcdef0123456789abcdef"
+    cloudflare_rulesets_read_token: "TEST_ONLY_RULESETS_TOKEN_1234567890"
+    heartbeat_url: "https://heartbeat.example.com/ping/test-only"
+    # Instance-specific public metadata also stays local so a fork cannot inherit another operator's identity.
+    operator_name: "Test operator"
+    abuse_email: "abuse@example.com"
+    jurisdiction: "Andorra"
+    security_email: "security@example.com"
+    security_policy_url: "https://example.com/security"
+    public_origin: "https://burnerpad.example.com"
+  tasks:
+    - name: Run the deployment configuration preflight
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../../ops/tasks/validate_deployment_configuration.yml"
