@@ -227,7 +227,7 @@
     that: _destroy_confirmation.user_input == 'DESTROY'
   when: _resident_before_deploy | int > 0
 
-- name: Deploy (compose up)
+- name: Deploy and wait up to 120 seconds for app and tunnel health
   community.docker.docker_compose_v2:
     project_src: "{{ remote_dir }}"
     project_name: "{{ compose_project_name }}"

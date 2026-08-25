@@ -140,6 +140,8 @@ jobs:
       - run: docker build --build-arg BURNERPAD_REVISION="$GITHUB_SHA" -t burnerpad:ci .
       - run: docker build --check -f ops/cloudflared.Dockerfile .
       - run: docker build -f ops/cloudflared.Dockerfile -t burnerpad-cloudflared:ci .
+      - name: Tunnel image healthcheck probes its explicit loopback metrics endpoint
+        run: test/ci/cloudflared_healthcheck_test.sh burnerpad:ci burnerpad-cloudflared:ci
       - name: Public image and OCI layers contain no release cookie
         run: test/ci/image_cookie_test.sh burnerpad:ci
       - name: Cookie scanner detects a credential deleted from the final filesystem
@@ -267,6 +269,7 @@ jobs:
           .github/scripts/reconcile-durable-issue.sh
           ops/check-control-tools.sh ops/check-security-claims.sh ops/install-requirements-locked.sh
           test/ci/image_cookie_scanner_test.sh test/ci/image_cookie_test.sh
+          test/ci/cloudflared_healthcheck_test.sh
           test/ci/production_runtime_hardening_test.sh
           test/ci/clean_tree_test.sh
           test/ci/dco_test.sh
