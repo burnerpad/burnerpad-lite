@@ -93,14 +93,7 @@
   changed_when: false
   no_log: true
 
-- name: Generate a fresh runtime-only Erlang cookie for this deployment
-  ansible.builtin.set_fact:
-    release_cookie: >-
-      {{ lookup('ansible.builtin.password', '/dev/null', length=64,
-                chars=['ascii_letters', 'digits']) }}
-  no_log: true
-
-- name: Ensure the remote dir (owned by the deploy user so rollback/logs work without sudo)
+- name: Ensure the remote dir (the root-only runtime env remains the deliberate exception)
   ansible.builtin.file:
     path: "{{ remote_dir }}"
     state: directory
@@ -116,28 +109,8 @@
     group: "{{ deploy_user }}"
     mode: "0640"
 
-- name: Render the runtime env (operator config + tunnel token; 0600, never on git)
-  no_log: true
-  ansible.builtin.copy:
-    dest: "{{ remote_dir }}/.env"
-    owner: "{{ deploy_user }}"
-    group: "{{ deploy_user }}"
-    mode: "0600"
-    content: |
-      APP_IMAGE={{ app_image | to_json }}
-      CLOUDFLARED_IMAGE={{ cloudflared_image | to_json }}
-      RELEASE_COOKIE={{ release_cookie | to_json }}
-      BURNERPAD_IMAGE_DIGEST={{ app_image.split('@') | last | to_json }}
-      TUNNEL_TOKEN={{ cloudflare_tunnel_token | to_json }}
-      OPERATOR_NAME={{ operator_name | to_json }}
-      ABUSE_EMAIL={{ abuse_email | to_json }}
-      JURISDICTION={{ jurisdiction | to_json }}
-      SECURITY_EMAIL={{ security_email | to_json }}
-      SECURITY_POLICY_URL={{ security_policy_url | to_json }}
-      MAX_SECRETS={{ max_secrets }}
-      GLOBAL_CREATE_CEILING={{ global_create_ceiling }}
-      PER_IP_BUDGET={{ per_ip_budget }}
-      PER_IP_ROW_BUDGET={{ per_ip_row_budget }}
+- name: Generate and render root-only runtime credentials
+  ansible.builtin.include_tasks: runtime_credentials.yml
 
 - name: Detect an existing running Burnerpad app container
   ansible.builtin.command: >-

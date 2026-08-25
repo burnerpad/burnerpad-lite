@@ -28,7 +28,10 @@ run every required check on the resulting commit. Never use an emergency bypass 
 
 ## Tag and release controls
 
-- Create a tag ruleset for `v*`: block update and deletion after creation; restrict creation to the founder.
+- Create two active tag rulesets for `v*`:
+  - a creation-only ruleset that restricts creation and lists only the founder as a bypass actor;
+  - an immutability ruleset that blocks update and deletion with an empty bypass list.
+  Keeping these controls separate prevents the founder's creation bypass from also permitting tag mutation.
 - Create release tags locally with `git tag -s`, verify with `git tag -v`, then push the one tag.
 - Never move or recreate a published tag. A correction gets a new patch version.
 - The parent repository publishes containers only from a successful same-repository `main` workflow run.

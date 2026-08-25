@@ -100,8 +100,9 @@ dependency resolution disabled. It stages a complete fresh dependency tree befor
 `.collections/` and `.roles/` directories, so stale artifacts cannot remain active.
 
 `inventory.ini`, `secrets.yml`, `.vault_pass`, and generated runtime credentials are gitignored and blocked
-by the pre-commit guard. Keep `secrets.yml` mode `0600`. Encrypt it with Ansible Vault if it may be backed up
-or shared:
+by the pre-commit guard. Keep `secrets.yml` mode `0600`. On the VPS, Ansible owns the generated
+`/opt/burnerpad/.env` as `root:root` with mode `0600`; direct Compose commands that need to read it must run
+through `sudo`. Encrypt `secrets.yml` with Ansible Vault if it may be backed up or shared:
 
 ```bash
 ansible-vault encrypt group_vars/all/secrets.yml
@@ -351,17 +352,18 @@ public `sha-<HEAD>` app/tunnel images. It then:
 1. pulls the full-SHA discovery tags and resolves their exact registry digests;
 2. requires both OCI revision labels to equal `HEAD`;
 3. verifies keyless Sigstore signatures and GitHub build-provenance attestations;
-4. generates a new runtime-only Erlang cookie and renders mode-0600 runtime configuration;
+4. generates a new runtime-only Erlang cookie and renders root-owned, mode-`0600` runtime configuration;
 5. reads `/api/stats`; if any resident ciphertext exists, requires literal `DESTROY`;
 6. starts digest-pinned, read-only, cap-dropped, CPU/memory/PID-bounded containers and waits for `/readyz`;
 7. verifies the reported full revision and app image digest;
 8. runs the public edge contract and create/claim/decrypt canary from the laptop.
 
-The full-SHA tag is used only to locate the two GHCR artifacts. The rendered `.env` and Compose file contain
-their immutable digest references, the app image digest exposed by `/api/stats`, a fresh 64-character
-runtime-only Erlang cookie, operator configuration, resource limits, and the tunnel token. The app receives
-an explicit environment allowlist and never receives the tunnel token. The release cookie created by
-`mix release` is removed from the public image, so every deployment has a different runtime credential.
+The full-SHA tag is used only to locate the two GHCR artifacts. The root-owned, mode-`0600` `.env` and the
+non-secret Compose template together resolve their immutable digest references, the app image digest exposed
+by `/api/stats`, a fresh 64-character runtime-only Erlang cookie, operator configuration, resource limits,
+and the tunnel token. The app receives an explicit environment allowlist and never receives the tunnel
+token. The release cookie created by `mix release` is removed from the public image, so every deployment has
+a different runtime credential.
 
 After all eight steps pass, update the scheduled canary's expected release:
 
@@ -379,8 +381,8 @@ On the VPS over Tailscale:
 ```bash
 ssh deploy@burnerpad
 cd /opt/burnerpad
-docker compose --project-name burnerpad ps
-docker inspect burnerpad-app-1 \
+sudo docker compose --project-name burnerpad ps
+sudo docker inspect burnerpad-app-1 \
   --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.Memory}} {{.HostConfig.CapDrop}} {{.RestartCount}}'
 ```
 

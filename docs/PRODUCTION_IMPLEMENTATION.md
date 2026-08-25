@@ -45,10 +45,14 @@ not claim that an external dashboard setting or live recovery drill has already 
 - All parent/nested workflow files pass YAML parsing and Actionlint. Browser npm and Hex advisory checks,
   unused dependency checks, intended-commit-set and full-history secret scans, and diff/security-claim gates
   are clean.
-- Both Dockerfiles pass build checks; both final images build; the app image has no baked cookie, rejects a
-  weak runtime cookie, exposes BEAM distribution only on loopback, supports release RPC, and passes a real
+- Both Dockerfiles pass build checks; both final images build; the app image and every saved OCI layer have
+  no baked cookie path or deletion whiteout, the release rejects a weak runtime cookie, exposes BEAM
+  distribution only on loopback, supports release RPC, and passes a real
   create/reveal/decrypt/second-claim transaction. Current Trivy data reports zero HIGH/CRITICAL findings in
   either image.
+- The isolated deployment-artifact regression renders twice through the production role and requires a
+  different 64-character cookie each time, a `root:root` mode-`0600` runtime file, and no cookie value in
+  Ansible output.
 - The constrained maximum-state matrix passes at 24,000 / 50,000 / 75,000 / 100,000 maximum-size rows for
   the documented 4 / 8 / 12 / 16 GiB VPS profiles, with memory headroom and clean post-load recovery.
 

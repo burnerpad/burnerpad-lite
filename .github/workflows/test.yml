@@ -140,8 +140,10 @@ jobs:
       - run: docker build --build-arg BURNERPAD_REVISION="$GITHUB_SHA" -t burnerpad:ci .
       - run: docker build --check -f ops/cloudflared.Dockerfile .
       - run: docker build -f ops/cloudflared.Dockerfile -t burnerpad-cloudflared:ci .
-      - name: Public image contains no release cookie
-        run: docker run --rm --entrypoint sh burnerpad:ci -c 'test ! -e releases/COOKIE'
+      - name: Public image and OCI layers contain no release cookie
+        run: test/ci/image_cookie_test.sh burnerpad:ci
+      - name: Cookie scanner detects a credential deleted from the final filesystem
+        run: test/ci/image_cookie_scanner_test.sh burnerpad:ci
       - name: Release refuses a weak runtime cookie
         run: |
           if output=$(docker run --rm -e RELEASE_COOKIE=short burnerpad:ci 2>&1); then
@@ -192,6 +194,8 @@ jobs:
           package-manager-cache: false
       - name: Install the pinned Ansible syntax-check runtime
         run: python3 -m pip install --disable-pip-version-check ansible-core==2.21.3
+      - name: Deployment generates private, unique runtime credentials
+        run: test/ci/runtime_credentials_test.sh
       - name: Verify and install pinned Galaxy inputs
         working-directory: ops
         run: ./install-requirements-locked.sh
@@ -250,11 +254,12 @@ jobs:
           .github/scripts/package-source.sh
           .github/scripts/reconcile-durable-issue.sh
           ops/check-security-claims.sh ops/install-requirements-locked.sh
+          test/ci/image_cookie_scanner_test.sh test/ci/image_cookie_test.sh
           test/ci/production_runtime_hardening_test.sh
           test/ci/clean_tree_test.sh
           test/load/run_capacity_profile.sh test/load/run_capacity_matrix.sh
           test/ci/compose_project_identity_test.sh test/ci/install_requirements_locked_test.sh
-          test/ci/reconcile_durable_issue_test.sh
+          test/ci/reconcile_durable_issue_test.sh test/ci/runtime_credentials_test.sh
           test/ci/source_release_test.sh
           /rendered/bp-diag.sh /rendered/bp-prune-images.sh
       - name: Test checksum-locked Galaxy installation
