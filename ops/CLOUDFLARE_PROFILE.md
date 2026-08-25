@@ -22,8 +22,9 @@ each change (exports can contain account identifiers and do not belong in this p
   HTML/script rewrite for the hostname. No Worker may intercept the hostname unless separately reviewed.
 - Do not enable Logpush/legacy Logpull for this zone. If incident logging is unavoidable, exclude query,
   path, headers, source-IP mapping, and response bodies; keep the shortest useful retention.
-- The tunnel route is `https://<hostname>` → `http://app:4000`. The app trusts only the dedicated Compose
-  bridge CIDR (`172.28.0.0/16`); rerun the ClientIP tests and public checks if that network changes.
+- The tunnel route is `https://<hostname>` → `http://app:4000`. The app trusts only the validated dedicated
+  Compose `backend_subnet` (a private `/16` through `/29`); Docker IPAM and `TRUSTED_PROXIES` are rendered
+  from that one value. Rerun the ClientIP tests and public checks if the network changes.
 
 ## Required rate-limit rules
 

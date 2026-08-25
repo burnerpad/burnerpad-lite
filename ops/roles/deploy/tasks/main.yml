@@ -118,6 +118,40 @@
     group: "{{ deploy_user }}"
     mode: "0750"
 
+- name: List allocated Docker networks before replacement
+  ansible.builtin.command: docker network ls --quiet
+  register: _docker_network_ids
+  changed_when: false
+
+- name: Read allocated Docker network ranges before replacement
+  ansible.builtin.command: >-
+    docker network inspect {{ _docker_network_ids.stdout_lines | join(' ') }}
+  register: _docker_network_inventory
+  changed_when: false
+
+- name: Validate the backend network plan on the control machine
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - node
+      - "{{ playbook_dir }}/check-docker-network-plan.mjs"
+      - "{{ backend_subnet }}"
+      - "{{ compose_project_name }}"
+      - backend
+    stdin: "{{ _docker_network_inventory.stdout }}"
+    stdin_add_newline: false
+  register: _docker_network_plan
+  changed_when: false
+  failed_when: false
+
+- name: Refuse a conflicting or invalid Docker backend network plan
+  ansible.builtin.fail:
+    msg: >-
+      {{ _docker_network_plan.stderr | trim }} If the default conflicts on this host, set a canonical,
+      non-overlapping private /16 through /29 as backend_subnet_override in the gitignored secrets.yml.
+  when: _docker_network_plan.rc | int != 0
+
 - name: Render the compose file
   ansible.builtin.template:
     src: docker-compose.yml.j2

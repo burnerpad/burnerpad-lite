@@ -20,6 +20,10 @@ image_name:        "ghcr.io/burnerpad/burnerpad-lite"
 github_repository: "burnerpad/burnerpad-lite"
 remote_dir:        /opt/burnerpad
 compose_project_name: "burnerpad" # stable identity; never derive this from customizable remote_dir
+# A /29 is sufficient for app + cloudflared while keeping the trusted-proxy boundary narrow. The default
+# deliberately differs from the pre-1.0 172.28.0.0/16 network so the first v1 replacement can coexist with
+# the still-running legacy stack. An unusual host may set backend_subnet_override in gitignored secrets.yml.
+backend_subnet: "{{ backend_subnet_override | default('172.29.0.0/29', true) }}"
 build_platform:    linux/amd64
 cloudflared_image_name: "ghcr.io/burnerpad/burnerpad-lite-cloudflared"
 release_tmp:       "/tmp"      # G1 — the release writes here; MUST be the tmpfs, not /app/tmp
