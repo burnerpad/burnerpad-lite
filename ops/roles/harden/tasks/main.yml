@@ -1,0 +1,39 @@
+---
+- name: Kernel sysctl hardening
+  ansible.posix.sysctl: { name: "{{ item.k }}", value: "{{ item.v }}", sysctl_set: true, reload: true }
+  loop:
+    - { k: kernel.kptr_restrict,                 v: "2" }
+    - { k: kernel.dmesg_restrict,                v: "1" }
+    - { k: kernel.yama.ptrace_scope,             v: "2" }
+    - { k: fs.suid_dumpable,                     v: "0" }
+    - { k: net.ipv4.conf.all.rp_filter,          v: "1" }
+    - { k: net.ipv4.conf.all.accept_redirects,   v: "0" }
+    - { k: net.ipv6.conf.all.accept_redirects,   v: "0" }
+    - { k: net.ipv4.conf.all.accept_source_route, v: "0" }
+    # cloudflared uses QUIC. These are per-socket ceilings, not reservations; the low Linux defaults make
+    # quic-go unable to request the buffers it needs under load and produce a warning on every boot.
+    - { k: net.core.rmem_max,                    v: "7500000" }
+    - { k: net.core.wmem_max,                    v: "7500000" }
+
+- name: Disable core dumps (a dump could hold live ciphertext)
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/99-nocore.conf
+    content: "* hard core 0\n"
+    mode: "0644"
+
+- name: Remove swap entries from fstab (RAM-only payloads must never be paged to disk)
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^(\s*[^#\n]+\s+\S+\s+swap\s+\S+.*)$'
+    replace: '# Disabled by Burnerpad RAM-only hardening: \1'
+
+- name: Disable all active swap
+  ansible.builtin.command: swapoff -a
+  when: ansible_facts["swaptotal_mb"] | int > 0
+  changed_when: true
+
+- name: Verify that no swap remains active
+  ansible.builtin.command: swapon --show --noheadings
+  register: _active_swap
+  changed_when: false
+  failed_when: _active_swap.stdout | trim | length > 0

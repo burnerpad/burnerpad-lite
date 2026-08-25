@@ -9,6 +9,7 @@ defmodule Burnerpad.Support do
   def reset do
     Burnerpad.Store.reset()
     Burnerpad.Abuse.reset()
+    Burnerpad.DailyStats.reset()
     :ok
   end
 

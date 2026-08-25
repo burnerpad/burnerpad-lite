@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "phase": "http_ratelimit",
+  "rules": [
+    {
+      "ref": "burnerpad_health_readiness_v1",
+      "description": "Burnerpad health and readiness origin protection v1",
+      "enabled": true,
+      "expression": "(http.host eq \"{{host}}\" and http.request.method in {\"GET\" \"HEAD\"} and http.request.uri.path in {\"/healthz\" \"/readyz\"})",
+      "action": "block",
+      "action_parameters": {
+        "response": {
+          "status_code": 429,
+          "content_type": "text/plain",
+          "content": "rate limited"
+        }
+      },
+      "ratelimit": {
+        "characteristics": [
+          "cf.colo.id",
+          "ip.src"
+        ],
+        "period": 60,
+        "requests_per_period": 120,
+        "mitigation_timeout": 60,
+        "requests_to_origin": false
+      }
+    },
+    {
+      "ref": "burnerpad_static_v1",
+      "description": "Burnerpad static asset and cache-busting protection v1",
+      "enabled": true,
+      "expression": "(http.host eq \"{{host}}\" and http.request.method in {\"GET\" \"HEAD\"} and (starts_with(http.request.uri.path, \"/crypto/\") or starts_with(http.request.uri.path, \"/fonts/\")))",
+      "action": "block",
+      "action_parameters": {
+        "response": {
+          "status_code": 429,
+          "content_type": "text/plain",
+          "content": "rate limited"
+        }
+      },
+      "ratelimit": {
+        "characteristics": [
+          "cf.colo.id",
+          "ip.src"
+        ],
+        "period": 60,
+        "requests_per_period": 600,
+        "mitigation_timeout": 120,
+        "requests_to_origin": false
+      }
+    }
+  ]
+}

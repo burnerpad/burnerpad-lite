@@ -1,0 +1,37 @@
+name: maximum-state capacity matrix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maximum-state-capacity
+  cancel-in-progress: false
+
+jobs:
+  capacity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install the pinned production-Compose test runtime
+        run: python3 -m pip install --disable-pip-version-check ansible-core==2.21.3
+      - name: Build the production application image
+        run: docker build --build-arg BURNERPAD_REVISION="$GITHUB_SHA" -t burnerpad:capacity .
+      - name: Run the 4/8/12/16 GiB maximum-state matrix
+        env:
+          LOAD_MATRIX_REPORT_DIR: ${{ runner.temp }}/capacity-reports
+        run: test/load/run_capacity_matrix.sh burnerpad:capacity burnerpad:capacity
+      - name: Preserve phase reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: maximum-state-capacity-${{ github.sha }}
+          path: ${{ runner.temp }}/capacity-reports
+          if-no-files-found: warn
+          retention-days: 30

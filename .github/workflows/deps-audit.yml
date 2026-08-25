@@ -1,0 +1,96 @@
+name: deps-audit
+# Catches newly disclosed CVEs and a newer cloudflared release even when no pull request exists.
+on:
+  schedule:
+    - cron: '17 6 * * *'    # every day 06:17 UTC
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  issues: write             # only for the optional issue-on-failure step
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .tool-versions
+          package-manager-cache: false
+      - run: mix deps.get
+      - run: mix hex.audit          # fails the scheduled run on any advisory
+      - run: npm audit --audit-level=high
+        working-directory: test/browser
+      - run: docker build -t burnerpad:audit .
+      - run: docker build -f ops/cloudflared.Dockerfile -t burnerpad-cloudflared:audit .
+      - name: Scan production images
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
+            --skip-version-check burnerpad:audit
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
+            --skip-version-check burnerpad-cloudflared:audit
+      - name: Check and scan the newest cloudflared release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pinned=$(sed -n 's/^ARG CLOUDFLARED_VERSION=//p' ops/cloudflared.Dockerfile)
+          latest=$(gh api repos/cloudflare/cloudflared/releases/latest --jq .tag_name)
+
+          docker pull "cloudflare/cloudflared:$latest"
+          if docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
+            --skip-version-check "cloudflare/cloudflared:$latest"; then
+            official_clean=true
+          else
+            official_clean=false
+            echo "The official $latest image still has high/critical findings; retaining the temporary patched build"
+          fi
+
+          if [ "$pinned" != "$latest" ]; then
+            commit=$(git ls-remote https://github.com/cloudflare/cloudflared.git "refs/tags/$latest^{}" | awk 'NR == 1 { print $1 }')
+            if [ -z "$commit" ]; then
+              commit=$(git ls-remote https://github.com/cloudflare/cloudflared.git "refs/tags/$latest" | awk 'NR == 1 { print $1 }')
+            fi
+            test -n "$commit"
+            docker build -f ops/cloudflared.Dockerfile \
+              --build-arg "CLOUDFLARED_VERSION=$latest" \
+              --build-arg "UPSTREAM_REVISION=$commit" \
+              -t burnerpad-cloudflared:candidate .
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+              image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
+              --skip-version-check burnerpad-cloudflared:candidate
+            echo "::error::cloudflared $latest is available; this repository still builds $pinned"
+            exit 1
+          fi
+
+          if [ "$official_clean" = true ]; then
+            echo "::error::Cloudflare's official $latest image now passes; remove the temporary custom build"
+            exit 1
+          fi
+          echo "cloudflared $pinned is the newest GitHub release"
+      - name: Reconcile the durable dependency-audit incident
+        if: ${{ always() && !cancelled() }}
+        # One durable issue, rather than one duplicate per scheduled run. GitHub's own failed-workflow
+        # notification remains the immediate alert; this issue is the review/upgrade queue.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INCIDENT_STATUS: ${{ job.status }}
+          INCIDENT_TITLE: Dependency/image audit failed
+          INCIDENT_FAILURE_BODY: >-
+            A scheduled dependency, image, or cloudflared freshness check failed. Review:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          INCIDENT_RECOVERY_COMMENT: The scheduled audit is green again.
+        run: .github/scripts/reconcile-durable-issue.sh
+    # Also: enable  Settings → Notifications → Actions → "failed workflows only"  for the email.

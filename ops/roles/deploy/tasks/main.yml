@@ -1,0 +1,205 @@
+---
+# Resolve and verify the immutable public images on the CONTROL machine. Pulling by the full-SHA tag is
+# only discovery; Compose receives the resolved digest and can never follow a mutable tag.
+- name: Require one safe, explicit Compose project identity
+  ansible.builtin.assert:
+    that: compose_project_name is match('^[a-z0-9][a-z0-9_-]{0,62}$')
+    fail_msg: >-
+      compose_project_name must be an explicit lowercase Compose project name, independent of remote_dir.
+
+- name: Fetch the pinned crypto submodule (control machine, for the external canary)
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: git -C "{{ playbook_dir }}/.." submodule update --init --recursive
+  changed_when: false
+
+- name: Require artifact-verification tools on the control machine
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: "{{ item }} version"
+  loop: [docker, cosign, gh]
+  changed_when: false
+
+- name: Pull the release images by full-SHA discovery tag
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: "docker pull {{ item }}:sha-{{ image_tag }}"
+  loop: ["{{ image_name }}", "{{ cloudflared_image_name }}"]
+  changed_when: false
+
+- name: Inspect the release images
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: "docker image inspect {{ item }}:sha-{{ image_tag }}"
+  loop: ["{{ image_name }}", "{{ cloudflared_image_name }}"]
+  register: _image_inspects
+  changed_when: false
+
+- name: Resolve immutable image references and embedded revisions
+  ansible.builtin.set_fact:
+    app_image: >-
+      {{ ((_image_inspects.results[0].stdout | from_json)[0].RepoDigests
+          | select('match', '^' ~ image_name ~ '@sha256:') | first) }}
+    cloudflared_image: >-
+      {{ ((_image_inspects.results[1].stdout | from_json)[0].RepoDigests
+          | select('match', '^' ~ cloudflared_image_name ~ '@sha256:') | first) }}
+    app_image_revision: >-
+      {{ (_image_inspects.results[0].stdout | from_json)[0].Config.Labels['org.opencontainers.image.revision'] }}
+    cloudflared_image_revision: >-
+      {{ (_image_inspects.results[1].stdout | from_json)[0].Config.Labels['org.opencontainers.image.revision'] }}
+
+- name: Refuse images whose OCI revision does not match the requested commit
+  ansible.builtin.assert:
+    that:
+      - app_image_revision == image_tag
+      - cloudflared_image_revision == image_tag
+
+- name: Verify keyless Sigstore signatures
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: >-
+    cosign verify
+    --certificate-identity https://github.com/{{ github_repository }}/.github/workflows/release.yml@refs/heads/main
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com
+    {{ item }}
+  loop: ["{{ app_image }}", "{{ cloudflared_image }}"]
+  changed_when: false
+
+- name: Verify GitHub build-provenance attestations
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: >-
+    gh attestation verify oci://{{ item }} --repo {{ github_repository }}
+  loop: ["{{ app_image }}", "{{ cloudflared_image }}"]
+  changed_when: false
+
+- name: Verify GitHub vulnerability-scan attestations
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: >-
+    gh attestation verify oci://{{ item }} --repo {{ github_repository }}
+    --predicate-type https://burnerpad.io/attestations/trivy/v1
+  loop: ["{{ app_image }}", "{{ cloudflared_image }}"]
+  changed_when: false
+
+- name: Audit the deployed Cloudflare health and static rate limits
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: node "{{ playbook_dir }}/cloudflare/audit-rate-limit-policy.mjs"
+  environment:
+    BURNERPAD_BASE_URL: "{{ public_origin }}"
+    CLOUDFLARE_ZONE_ID: "{{ cloudflare_zone_id }}"
+    CLOUDFLARE_RULESETS_READ_TOKEN: "{{ cloudflare_rulesets_read_token }}"
+  changed_when: false
+  no_log: true
+
+- name: Ensure the remote dir (the root-only runtime env remains the deliberate exception)
+  ansible.builtin.file:
+    path: "{{ remote_dir }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    mode: "0750"
+
+- name: Render the compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ remote_dir }}/docker-compose.yml"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    mode: "0640"
+
+- name: Generate and render root-only runtime credentials
+  ansible.builtin.include_tasks: runtime_credentials.yml
+
+- name: Detect an existing running Burnerpad app container
+  ansible.builtin.command: >-
+    docker ps -q
+    --filter label=com.docker.compose.project={{ compose_project_name }}
+    --filter label=com.docker.compose.service=app
+  register: _existing_app
+  changed_when: false
+
+- name: Read the current resident ciphertext count before replacement
+  ansible.builtin.command: >-
+    docker compose --project-name {{ compose_project_name }}
+    -f {{ remote_dir }}/docker-compose.yml
+    --env-file {{ remote_dir }}/.env exec -T app
+    wget -qO- http://127.0.0.1:4000/api/stats
+  register: _predeploy_stats
+  changed_when: false
+  when: _existing_app.stdout | trim | length > 0
+
+- name: Refuse a blind replacement when a running app cannot report its resident count
+  ansible.builtin.assert:
+    that:
+      - _predeploy_stats.rc == 0
+      - (_predeploy_stats.stdout | from_json).resident is number
+      - (_predeploy_stats.stdout | from_json).resident | int >= 0
+    fail_msg: >-
+      A running app exists but its aggregate resident count could not be verified. Deployment stopped
+      rather than silently destroying an unknown number of ciphertext rows.
+  when: _existing_app.stdout | trim | length > 0
+
+- name: Record how many resident rows this deployment will remove
+  ansible.builtin.set_fact:
+    _resident_before_deploy: >-
+      {{ ((_predeploy_stats.stdout | from_json).resident | int)
+         if _existing_app.stdout | trim | length > 0
+         else 0 }}
+
+- name: Confirm destructive single-node replacement
+  ansible.builtin.pause:
+    prompt: >-
+      This deployment will replace the only app instance and irreversibly destroy
+      {{ _resident_before_deploy }} resident ciphertext(s). Type DESTROY to continue
+  register: _destroy_confirmation
+  when: _resident_before_deploy | int > 0
+
+- name: Refuse an unconfirmed destructive replacement
+  ansible.builtin.assert:
+    that: _destroy_confirmation.user_input == 'DESTROY'
+  when: _resident_before_deploy | int > 0
+
+- name: Deploy (compose up)
+  community.docker.docker_compose_v2:
+    project_src: "{{ remote_dir }}"
+    project_name: "{{ compose_project_name }}"
+    state: present
+    remove_orphans: true
+    pull: always
+    wait: true
+    wait_timeout: 120
+
+- name: Verify the running application reports the requested full revision
+  ansible.builtin.command: >-
+    docker compose --project-name {{ compose_project_name }}
+    -f {{ remote_dir }}/docker-compose.yml
+    --env-file {{ remote_dir }}/.env exec -T app
+    wget -qO- http://127.0.0.1:4000/api/stats
+  register: _running_stats
+  changed_when: false
+
+- name: Refuse a healthy container running an unexpected revision
+  ansible.builtin.assert:
+    that:
+      - (_running_stats.stdout | from_json).version is match('^[^+]+\\+' ~ image_tag ~ '$')
+      - (_running_stats.stdout | from_json).image_digest == (app_image.split('@') | last)
+
+- name: Verify the public Cloudflare delivery contract
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: node "{{ playbook_dir }}/smoke/edge-contract.mjs"
+  environment:
+    BURNERPAD_BASE_URL: "{{ public_origin }}"
+    BURNERPAD_EXPECTED_REVISION: "{{ image_tag }}"
+  changed_when: false
+
+- name: Run the public post-deploy create/reveal/decrypt canary
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: node "{{ playbook_dir }}/smoke/e2e-canary.mjs"
+  environment:
+    BURNERPAD_BASE_URL: "{{ public_origin }}"
+    BURNERPAD_EXPECTED_REVISION: "{{ image_tag }}"
+  changed_when: false

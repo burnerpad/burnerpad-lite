@@ -1,0 +1,45 @@
+# Non-secret config (safe to commit). Real secrets → secrets.yml (gitignored, see .example).
+# ── who / where ─────────────────────────────────────────────────────────────
+deploy_user:        deploy      # Tailscale SSH lands you here (identity-based); no SSH key on the box
+tailscale_hostname: burnerpad                # the box's tailnet name after `tailscale up`
+tailscale_tag:      "tag:burnerpad"          # tags the box so the ACL can lock it down (sink node)
+
+# ── operator identity (M7 — a fork MUST change these) ───────────────────────
+operator_name: "CHANGE_ME_LEGAL_OPERATOR"
+abuse_email:   "abuse@example.invalid"
+jurisdiction:  "CHANGE_ME_JURISDICTION"
+security_email: "security@example.invalid"
+security_policy_url: "https://example.invalid/CHANGE_ME_SECURITY_POLICY"
+
+# ── capacity / memory — SIZE THESE TO THE BOX'S RAM (L9) ────────────────────
+# The ciphertext product is only a payload floor; BEAM/runtime overhead is substantial. Use the measured
+# 4/8/12/16 GiB profiles in docs/CAPACITY_PLANNING.md and leave the documented host reserve.
+mem_limit:   "1500m"      # e.g. on a 2 GB box
+cpu_limit:   "1.0"        # one core maximum; leaves host/tunnel capacity during abusive load
+max_secrets: 10000        # 10000 * 64KB ≈ 640 MB worst case — comfortably under mem_limit
+global_create_ceiling: 1000 # valid create admissions/minute across all sources
+per_ip_budget: 13107200   # 2% of worst-case bytes; >= one maximum-size ciphertext
+per_ip_row_budget: 200    # 2% of MAX_SECRETS; blocks tiny-blob row exhaustion
+
+# ── app / deploy ────────────────────────────────────────────────────────────
+image_name:        "ghcr.io/burnerpad/burnerpad-lite"
+github_repository: "burnerpad/burnerpad-lite"
+public_origin:     "https://CHANGE-ME.invalid"
+remote_dir:        /opt/burnerpad
+compose_project_name: "burnerpad" # stable identity; never derive this from customizable remote_dir
+build_platform:    linux/amd64
+cloudflared_image_name: "ghcr.io/burnerpad/burnerpad-lite-cloudflared"
+release_tmp:       "/tmp"      # G1 — the release writes here; MUST be the tmpfs, not /app/tmp
+retain_verified_releases: 5
+disk_alert_percent: 85
+inode_alert_percent: 85
+memory_alert_percent: 90
+cpu_alert_percent: 90
+
+# B2 — devsec os_hardening sets ip_forward=0 by default, which kills cloudflared's egress.
+# Keep forwarding ON so the Docker bridge + tunnel work.
+sysctl_overwrite:
+  net.ipv4.ip_forward: 1
+  net.ipv6.conf.all.forwarding: 1
+
+# `heartbeat_url` is a bearer-like secret: it lives in gitignored secrets.yml, never in this public file.

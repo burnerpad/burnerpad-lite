@@ -19,11 +19,22 @@
     displayUrl: function (u) { return String(u).replace(/^https?:\/\//i, "").replace(/^www\./i, ""); },
     // Canonicalize a passphrase word to the form the key was derived from: trimmed + lowercased.
     canonWord: function (w) { return String(w).trim().toLowerCase(); },
-    // Parse a pasted phrase into canonical word tokens, CAPPED at `max` so a runaway/malicious paste (e.g.
-    // the whole 1296-word list) can't create thousands of chips and freeze the tab.
-    parsePaste: function (text, max) {
+    // Parse without silently truncating. The browser validates limits and wordlist membership before it
+    // changes any chip, so a pasted credential is either preserved exactly or rejected explicitly.
+    parsePaste: function (text) {
       var toks = String(text).trim().split(/\s+/).filter(Boolean).map(Core.canonWord);
-      return max && toks.length > max ? toks.slice(0, max) : toks;
+      return toks;
+    },
+    validatePaste: function (text, maxTokens, maxBytes, maxTokenChars) {
+      if (!Core.isWellFormedText(text)) return { ok: false, error: "invalid_unicode" };
+      if (Core.encodeText(text).length > maxBytes) return { ok: false, error: "too_large" };
+      var tokens = Core.parsePaste(text);
+      if (tokens.length > maxTokens) return { ok: false, error: "too_many" };
+      if (tokens.some(function (token) { return token.length > maxTokenChars; })) {
+        return { ok: false, error: "token_too_long" };
+      }
+      if (new Set(tokens).size !== tokens.length) return { ok: false, error: "duplicate" };
+      return { ok: true, tokens: tokens };
     },
     // Create-page strength state from the word count `n` and how many random-core words `gen` remain.
     // < min words → "bad" (add more); >= min generated present → "ok" (very strong / mixed); otherwise the
@@ -32,6 +43,100 @@
       if (n < min) return { label: n + "/" + min + " words — add " + (min - n) + " more", cls: "strength bad", warn: false };
       if (gen >= min) return { label: "✓ " + n + " words · " + (n > gen ? "mixed" : "very strong"), cls: "strength ok", warn: false };
       return { label: n + " words · weaker", cls: "strength weak", warn: true };
+    },
+    // JavaScript strings are UTF-16 and may contain an unpaired surrogate. TextEncoder silently replaces
+    // that malformed input with U+FFFD, which would make the revealed text differ from what was entered.
+    // Reject it instead, then encode/decode strict, non-normalized UTF-8 (BOM and combining marks included).
+    isWellFormedText: function (text) {
+      if (typeof text !== "string") return false;
+      for (var i = 0; i < text.length; i++) {
+        var unit = text.charCodeAt(i);
+        if (unit >= 0xD800 && unit <= 0xDBFF) {
+          if (++i >= text.length) return false;
+          var next = text.charCodeAt(i);
+          if (next < 0xDC00 || next > 0xDFFF) return false;
+        } else if (unit >= 0xDC00 && unit <= 0xDFFF) {
+          return false;
+        }
+      }
+      return true;
+    },
+    encodeText: function (text) {
+      if (!Core.isWellFormedText(text)) throw new Error("invalid_unicode");
+      return new TextEncoder().encode(text);
+    },
+    decodeText: function (bytes) {
+      try {
+        // `ignoreBOM: true` means treat a leading BOM as content instead of silently stripping it.
+        return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+      } catch (_e) {
+        throw new Error("invalid_utf8");
+      }
+    },
+    durationLabel: function (seconds) {
+      if (seconds % 3600 === 0) return (seconds / 3600) + "h";
+      if (seconds % 60 === 0) return (seconds / 60) + "m";
+      return seconds + "s";
+    },
+    // Own the security-sensitive reveal lifecycle behind one seam. The caller can observe a snapshot and
+    // borrow the held ciphertext for local decryption, but only this state machine changes phases, guards
+    // concurrent claims, or releases/zeroes ciphertext.
+    revealClaim: function () {
+      var phase = "unclaimed";
+      var active = false;
+      var ciphertext = null;
+
+      function wipeCiphertext() {
+        if (ciphertext) ciphertext.fill(0);
+        ciphertext = null;
+      }
+
+      return {
+        view: function () {
+          return { phase: phase, active: active, hasCiphertext: ciphertext !== null };
+        },
+        ciphertext: function () { return ciphertext; },
+        advance: function (event, value) {
+          if (event === "begin") {
+            if (active || phase === "unavailable") return false;
+            active = true;
+            return true;
+          }
+          if (event === "hold") {
+            if (!(value instanceof Uint8Array)) throw new Error("invalid_reveal_transition");
+            if (!active || phase === "unavailable") {
+              value.fill(0);
+              return false;
+            }
+            wipeCiphertext();
+            ciphertext = value;
+            phase = "held";
+            return true;
+          }
+          if (event === "unknown") {
+            if (phase === "unavailable") return false;
+            wipeCiphertext();
+            phase = "unknown";
+            return true;
+          }
+          if (event === "unavailable") {
+            wipeCiphertext();
+            phase = "unavailable";
+            return true;
+          }
+          if (event === "finish") {
+            active = false;
+            return true;
+          }
+          if (event === "purge") {
+            wipeCiphertext();
+            active = false;
+            phase = "unavailable";
+            return true;
+          }
+          throw new Error("invalid_reveal_transition");
+        }
+      };
     }
   };
 
@@ -40,12 +145,53 @@
 
   // ───────────────────────── browser: wire the DOM (uses Core for the pure bits) ─────────────────────────
   var C = window.BurnerpadCrypto;
-  var enc = new TextEncoder();
-  var dec = new TextDecoder();
+  var pageHidden = false;
+  var revealClaim = null;
+  var REQUEST_TIMEOUT_MS = 12_000;
+  var pendingControllers = new Set();
+
+  // `fetch` resolves after headers. Keep the deadline active through any supplied body consumer as well.
+  async function timedFetch(url, options, consumeResponse) {
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, REQUEST_TIMEOUT_MS);
+    pendingControllers.add(controller);
+    try {
+      var response = await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+      if (consumeResponse) await consumeResponse(response);
+      return response;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error("request_timeout");
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      pendingControllers.delete(controller);
+    }
+  }
 
   function $(id) { return document.getElementById(id); }
   function show(el) { if (el) el.hidden = false; }
   function hide(el) { if (el) el.hidden = true; }
+
+  // Purge page-held secret material on navigation/page close, including bfcache entry. JavaScript engines
+  // cannot promise physical zeroization of immutable strings, but we release every reference we control.
+  window.addEventListener("pagehide", function () {
+    pageHidden = true;
+    pendingControllers.forEach(function (controller) { controller.abort(); });
+    pendingControllers.clear();
+    ["bp-secret", "bp-pass-chips", "bp-pass-out", "bp-psk-chips"].forEach(function (name) {
+      var el = $(name); if (el) el.textContent = "";
+    });
+    ["bp-input", "bp-link", "bp-pass-input", "bp-psk-input"].forEach(function (name) {
+      var el = $(name); if (el) el.value = "";
+    });
+    var pageLink = $("bp-link"); if (pageLink) pageLink.removeAttribute("data-full-url");
+    if (revealClaim) revealClaim.advance("purge");
+    current = null; phrase = ""; words = []; genWords = new Set(); rwords = [];
+  });
+
+  // A bfcache restore would otherwise revive a deliberately purged, half-functional document. Reload it
+  // from the server instead (a consumed reveal correctly returns gone; the create page starts fresh).
+  window.addEventListener("pageshow", function (e) { if (e.persisted) location.reload(); });
 
   // Passphrase words: drawn uniformly (rejection-sampled — no modulo bias) from the EFF Short Wordlist #2
   // (1296 distinct words; edit-distance >=3, unique 3-char prefixes — for the spoken channel). A generated
@@ -73,11 +219,23 @@
   // Brief "Copied ✓" feedback on a button, then restore it. Saves/restores innerHTML (not textContent)
   // so a button that holds an icon + label keeps its icon after the flash. Re-entrancy-safe: a second
   // click within the window reuses the originally-captured markup (never the swapped "Copied ✓" state).
-  function flash(btn) {
+  function flash(btn, message) {
     if (btn._flashTimer) clearTimeout(btn._flashTimer);
     else btn._flashHtml = btn.innerHTML;
-    btn.textContent = "Copied ✓";
+    btn.textContent = message;
     btn._flashTimer = setTimeout(function () { btn.innerHTML = btn._flashHtml; btn._flashTimer = null; }, 1500);
+  }
+
+  // Never claim success while an async clipboard write is missing, denied, or failed. A false positive can
+  // make a user paste stale clipboard contents into the wrong channel.
+  async function copyText(btn, text) {
+    try {
+      if (!navigator.clipboard) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(text);
+      if (!pageHidden) flash(btn, "Copied ✓");
+    } catch (_e) {
+      if (!pageHidden) flash(btn, "Copy failed");
+    }
   }
 
   // A removable word chip: the word + an "×" that calls onRemove.
@@ -226,7 +384,7 @@
     // secret nudges focus to the textarea; clicking with <7 words surfaces an error (see the submit handler).
     function refreshCreateBtn() {
       if (submitting) return; // don't clobber the in-flight "Creating…" label
-      setCreateLabel(input.value.trim() ? "Encrypt & create link" : "Add your secret to continue");
+      setCreateLabel(input.value ? "Encrypt & create link" : "Add your secret to continue");
     }
 
     // Live meta on the secret field: line count + UTF-8 size, flagged red past the blob limit. The server
@@ -237,7 +395,13 @@
       if (!createMeta) return;
       var v = input.value;
       if (!v) { hide(createMeta); return; }
-      var bytes = enc.encode(v).length, lines = v.split("\n").length;
+      if (!Core.isWellFormedText(v)) {
+        createMeta.textContent = "Invalid Unicode text";
+        createMeta.style.color = "var(--bad)";
+        show(createMeta);
+        return;
+      }
+      var bytes = Core.encodeText(v).length, lines = v.split("\n").length;
       var size = bytes < 1024 ? bytes + " B" : (bytes / 1024).toFixed(1) + " KB";
       createMeta.textContent = lines + (lines === 1 ? " line · " : " lines · ") + size +
         (bytes > MAX_PLAINTEXT ? " · over 64 KB limit" : "");
@@ -295,9 +459,29 @@
       if (submitting) return; // guard double-submit without ever disabling the (always-active) button
       hide(error); hide(burned);
       var text = input.value;
-      if (!text.trim()) { input.focus(); return; } // no secret yet → nudge focus to the textarea, don't error
+      if (!text) { input.focus(); return; } // no secret yet → nudge focus to the textarea, don't error
       if (words.length < MIN) {
         error.textContent = "Add at least " + MIN + " words to your passphrase.";
+        show(error);
+        return;
+      }
+      if (genWords.size < MIN) {
+        // L4: the random core was weakened below the floor — a fully hand-picked phrase is guessable.
+        error.textContent = "Keep the generated words (or press Regenerate) — a phrase you fully hand-pick is easier to guess.";
+        show(error);
+        return;
+      }
+      var plainBytes;
+      try {
+        plainBytes = Core.encodeText(text);
+      } catch (_e) {
+        error.textContent = "The secret contains malformed Unicode text.";
+        show(error);
+        return;
+      }
+      if (plainBytes.length > MAX_PLAINTEXT) {
+        plainBytes.fill(0);
+        error.textContent = "The secret is over the 64 KB encrypted-size limit.";
         show(error);
         return;
       }
@@ -305,25 +489,49 @@
       submitting = true; // the guard at the top of submit blocks re-entry; the button itself stays active
       setCreateLabel("Creating…");
       try {
-        var out = await C.encryptPsk(phrase, enc.encode(text)); // suite 0x02 — key-less link, no fragment
-        var res = await fetch("/api/secrets", {
+        try {
+          var out = await C.encryptPsk(phrase, plainBytes); // suite 0x02 — key-less link, no fragment
+        } finally {
+          plainBytes.fill(0);
+        }
+        if (pageHidden) { out.blob.fill(0); return; }
+        var fragment = out.fragment; // suite 0x02 is empty; keep URL construction independent of `out`
+        var requestBody = JSON.stringify({ blob: C.b64url(out.blob) });
+        out.blob.fill(0);
+        out = null;
+        var data;
+        var res = await timedFetch("/api/secrets", {
           method: "POST",
           headers: { "content-type": "application/json", "accept": "application/json" },
-          body: JSON.stringify({ blob: C.b64url(out.blob) })
+          body: requestBody
+        }, async function (response) {
+          if (!response.ok) return;
+          try { data = await response.json(); }
+          catch (_parseError) { throw new Error("create_outcome_unknown"); }
         });
-        if (!res.ok) throw new Error("The server rejected the secret.");
-        var data = await res.json();
-        var url = C.buildUrl(location.origin, data.id, out.fragment); // out.fragment === "" → no key in URL
+        requestBody = "";
+        if (pageHidden) return;
+        if (!res.ok) throw new Error("create_rejected");
+        if (pageHidden) return;
+        var expiry = $("bp-expiry");
+        if (expiry && Number.isInteger(data.ttl)) expiry.textContent = Core.durationLabel(data.ttl);
+        var url = C.buildUrl(location.origin, data.id, fragment); // fragment === "" → no key in URL
         current = { id: data.id, mgmt: data.mgmt_token, url: url };
         link.dataset.fullUrl = url; // the real URL to copy/open; the field shows it without scheme/www.
         link.value = Core.displayUrl(url);
         renderResultChips(phrase.split(" ")); // from the COMMITTED snapshot, never live `words` (a reroll
+        input.value = ""; // the server accepted the ciphertext; the hidden form no longer needs plaintext
+        text = "";
+        updateMeta();
         hide(form); // mid-encrypt must not desync the shown phrase from the one the blob was sealed under)
         hide(intro); // drop the hero + feature strip — the success screen is just the header + hand-off
         show(result);
         link.focus(); // move focus into the result so AT announces it and the copy targets are in reach
       } catch (err) {
-        error.textContent = err.message || "Something went wrong.";
+        if (pageHidden) return;
+        error.textContent = (err.message === "request_timeout" || err.message === "create_outcome_unknown" || err instanceof TypeError)
+          ? "Creation outcome unknown. Do not retry this same secret; a copy may remain until its timer expires."
+          : (err.message === "create_rejected" ? "The server rejected the secret." : (err.message || "Something went wrong."));
         show(error);
         submitting = false;
         refreshCreateBtn(); // restore the label (the secret is still present → "Encrypt & create link")
@@ -333,36 +541,50 @@
     if (copyBtn) copyBtn.addEventListener("click", function () {
       link.select();
       // copy the FULL url (with scheme) even though the field shows it stripped — a scheme-less link isn't clickable
-      if (navigator.clipboard) navigator.clipboard.writeText(link.dataset.fullUrl || link.value);
-      flash(copyBtn);
+      copyText(copyBtn, link.dataset.fullUrl || link.value);
     });
 
     // Copy passphrase: the words are offered for copying so they can go out on a SECOND channel (a separate
     // app, a text, a call). It is on the recipient to keep that channel apart from where the link was sent.
     // Copies the committed `phrase` snapshot — never live `words` (a mid-flight reroll must not desync it).
     if (copyPhraseBtn) copyPhraseBtn.addEventListener("click", function () {
-      if (navigator.clipboard) navigator.clipboard.writeText(phrase);
-      flash(copyPhraseBtn);
+      copyText(copyPhraseBtn, phrase);
     });
 
     if (burnBtn) burnBtn.addEventListener("click", async function () {
       if (!current) return;
+      if (!window.confirm("Burn this secret now? This cannot be undone.")) return;
+      var burnError = $("bp-burn-error");
+      hide(burnError);
       burnBtn.disabled = true;
       setBurnLabel("Burning…");
       try {
-        var res = await fetch("/s/" + current.id + "/burn", {
+        var res = await timedFetch("/api/secrets/" + current.id + "/burn", {
           method: "POST",
           headers: { "content-type": "application/json", "accept": "application/json" },
           body: JSON.stringify({ mgmt_token: current.mgmt })
         });
-        // Don't claim "destroyed" on a server/proxy error that may have left the secret live. With the
-        // correct id+token the route returns 200 (burned) or 403 (already revealed/expired = already gone);
-        // only a 5xx is a genuine "we don't know" that must not be shown as burned.
-        if (res.status >= 500) throw new Error("Could not burn the secret — try again.");
+        if (pageHidden) return;
+        // Claim success only for a token-matched delete. A 404 cannot prove that this client burned the
+        // row: it may have been read, expired, purged, never existed, or used the wrong token.
+        if (res.status !== 200) throw new Error("Could not burn the secret — try again.");
+        current = null;
+        phrase = "";
+        words = [];
+        genWords = new Set();
+        link.value = "";
+        link.removeAttribute("data-full-url");
+        passOut.textContent = "";
+        passInput.value = "";
         hide(share); // burn lives inside #bp-share, so this removes the link/copy AND the burn button
         show(burned);
         again.focus(); // success path: focus the next action so AT announces the burned state
-      } catch (_e) {
+      } catch (burnFailure) {
+        if (pageHidden) return;
+        burnError.textContent = burnFailure.message === "request_timeout" || burnFailure instanceof TypeError
+          ? "Burn outcome unknown. Check the link before sharing it again."
+          : "The server could not confirm the burn; it may already be unavailable.";
+        show(burnError);
         burnBtn.disabled = false;
         setBurnLabel("Burn it now");
       }
@@ -370,6 +592,7 @@
 
     // "Create another" — soft reset back to the form (no reload, no network). A fresh phrase is generated.
     if (again) again.addEventListener("click", function () {
+      if (current && !window.confirm("Creating another secret discards this page's only burn token. Continue?")) return;
       current = null;
       phrase = "";
       input.value = "";
@@ -414,8 +637,7 @@
     if (secretOut) secretOut.addEventListener("scroll", updateSecretFade, { passive: true });
 
     if (copySecret) copySecret.addEventListener("click", function () {
-      if (navigator.clipboard) navigator.clipboard.writeText(secretOut.textContent);
-      flash(copySecret);
+      copyText(copySecret, secretOut.textContent);
     });
 
     if (C.readFragment()) {
@@ -430,8 +652,7 @@
       var pskIcon = pskBtn.querySelector("use"), pskLabel = pskBtn.querySelector(".btn-label");
       var MINREV = 7;
       var rwords = [];
-      var heldBlob = null;   // the one network reveal (= the one burn); phrase retries are local
-      var revealing = false; // guards the async reveal without disabling the (always-active) button
+      revealClaim = Core.revealClaim();
 
       function renderPskChips() {
         pskChips.textContent = "";
@@ -442,8 +663,21 @@
         var n = rwords.length, complete = n >= MINREV;
         if (pskCount) pskCount.classList.toggle("ok", complete);
         if (pskCountN) pskCountN.textContent = complete ? String(n) : n + " / " + MINREV;
-        if (pskIcon) pskIcon.setAttribute("href", complete ? "#i-eye" : "#i-type");
-        if (pskLabel) pskLabel.textContent = complete ? "Reveal & decrypt" : "Enter at least " + MINREV + " words";
+        var claimView = revealClaim.view();
+        pskBtn.disabled = claimView.active || claimView.phase === "unavailable";
+        if (claimView.active) {
+          if (pskIcon) pskIcon.setAttribute("href", "#i-eye");
+          if (pskLabel) pskLabel.textContent = "Retrieving…";
+        } else if (claimView.phase === "unavailable") {
+          if (pskIcon) pskIcon.setAttribute("href", "#i-warn");
+          if (pskLabel) pskLabel.textContent = "Secret unavailable";
+        } else if (claimView.phase === "unknown" && complete) {
+          if (pskIcon) pskIcon.setAttribute("href", "#i-warn");
+          if (pskLabel) pskLabel.textContent = "Try claim again — it may be gone";
+        } else {
+          if (pskIcon) pskIcon.setAttribute("href", complete ? "#i-eye" : "#i-type");
+          if (pskLabel) pskLabel.textContent = complete ? "Reveal & decrypt" : "Enter at least " + MINREV + " words";
+        }
       }
 
       // Append a word (from the autocomplete pick OR a paste). Canonicalizes to lowercase; list-locked typing
@@ -461,15 +695,26 @@
         onBackspace: function () { if (rwords.length) { rwords.pop(); renderPskChips(); } }
       });
 
-      // Paste the whole phrase at once: Core.parsePaste splits on whitespace, canonicalizes every word, and
-      // caps the count (MAX_PASTE) so a runaway/malicious paste can't flood the DOM. EVERY word becomes a
-      // chip — including the last (no trailing space needed). A single-word paste falls through to typing.
-      var MAX_PASTE = 64;
+      // Paste the whole phrase at once: validate count, bytes, token length, duplicates, and membership
+      // before changing the DOM. A credential is never silently truncated or partially accepted.
+      var MAX_PASTE = 64, MAX_PASTE_BYTES = 1024, MAX_TOKEN_CHARS = 32;
       pskInput.addEventListener("paste", function (e) {
         var cb = e.clipboardData; // standard paste DataTransfer (the only browsers without it lack WebCrypto)
-        var tokens = Core.parsePaste((cb && cb.getData("text")) || "", MAX_PASTE);
+        var parsed = Core.validatePaste((cb && cb.getData("text")) || "", MAX_PASTE, MAX_PASTE_BYTES, MAX_TOKEN_CHARS);
+        if (!parsed.ok) {
+          e.preventDefault();
+          perr.textContent = "That pasted phrase is too large, duplicated, or malformed.";
+          show(perr);
+          return;
+        }
+        var tokens = parsed.tokens;
         if (tokens.length < 2) return;
         e.preventDefault();
+        if (tokens.some(function (word) { return WORDS.indexOf(word) === -1; })) {
+          perr.textContent = "That phrase contains a word outside the Burnerpad wordlist.";
+          show(perr);
+          return;
+        }
         tokens.forEach(addRev);
         pskInput.value = "";
         renderPskChips();
@@ -478,24 +723,82 @@
 
       pskBtn.addEventListener("click", async function () {
         hide(perr);
+        var claimView = revealClaim.view();
+        if (claimView.phase === "unavailable") return;
         if (rwords.length < MINREV) { pskInput.focus(); return; } // always-active: nudge instead of blocking
-        if (revealing) return; // guard the in-flight reveal (no second burn) without disabling the button
-        revealing = true;
+        if (claimView.active) return; // defense in depth: the in-flight UI state also disables the button
+        if (claimView.phase === "unknown" && !window.confirm(
+          "The previous claim may already have removed the ciphertext. Trying again can work only if that request never reached the server. Continue?"
+        )) return;
+        if (!revealClaim.advance("begin")) return;
+        renderPskChips();
         try {
-          if (!heldBlob) {
-            var res = await fetch("/s/" + id + "/reveal", { method: "POST", headers: { "accept": "application/json" } });
-            if (res.status === 410) throw new Error("This secret has already been read, or it expired.");
-            if (!res.ok) throw new Error("Could not retrieve the secret.");
-            heldBlob = C.unb64url((await res.json()).blob);
+          if (!revealClaim.view().hasCiphertext) {
+            var res;
+            var revealData;
+            try {
+              res = await timedFetch("/api/secrets/" + id + "/reveal", { method: "POST", headers: { "content-type": "application/json", "accept": "application/json" }, body: "{}" }, async function (response) {
+                if (!response.ok) return;
+                try { revealData = await response.json(); }
+                catch (_parseError) { throw new Error("reveal_outcome_unknown"); }
+              });
+            } catch (requestError) {
+              revealClaim.advance("unknown");
+              renderPskChips();
+              throw requestError;
+            }
+            if (pageHidden) return;
+            if (res.status === 404) {
+              revealClaim.advance("unavailable");
+              renderPskChips();
+              throw new Error("This secret is unavailable.");
+            }
+            if (!res.ok) {
+              revealClaim.advance("unknown");
+              renderPskChips();
+              throw new Error("reveal_outcome_unknown");
+            }
+            var receivedBlob;
+            try {
+              receivedBlob = C.unb64url(revealData.blob);
+            } catch (_parseError) {
+              revealClaim.advance("unknown");
+              renderPskChips();
+              throw new Error("reveal_outcome_unknown");
+            } finally {
+              revealData = null;
+            }
+            if (pageHidden) { receivedBlob.fill(0); revealClaim.advance("purge"); return; }
+            revealClaim.advance("hold", receivedBlob);
+            renderPskChips();
           }
           // List-locked chips are already canonical (lowercase words, single spaces) — exactly what the
           // key was derived from — so no transcription canonicalization is needed.
-          var plain = await C.decryptPsk(heldBlob, rwords.join(" "));
-          var text = dec.decode(plain);
+          var plain = await C.decryptPsk(revealClaim.ciphertext(), rwords.join(" "));
+          if (pageHidden) {
+            plain.fill(0);
+            revealClaim.advance("purge");
+            return;
+          }
+          var bytes = plain.length;
+          var text;
+          try {
+            text = Core.decodeText(plain);
+          } catch (decodeError) {
+            revealClaim.advance("unavailable");
+            renderPskChips();
+            throw decodeError;
+          } finally {
+            plain.fill(0);
+          }
+          revealClaim.advance("purge");
+          rwords = [];
+          pskChips.textContent = "";
+          pskInput.value = "";
           hide(psk);
           secretOut.textContent = text;
           if (secretMeta) { // "N lines · X KB" header, like the design
-            var bytes = enc.encode(text).length, lines = text.split("\n").length;
+            var lines = text.split("\n").length;
             secretMeta.textContent = lines + (lines === 1 ? " line · " : " lines · ") +
               (bytes < 1024 ? bytes + " B" : (bytes / 1024).toFixed(1) + " KB");
           }
@@ -503,13 +806,19 @@
           requestAnimationFrame(updateSecretFade); // measure overflow once laid out
           if (copySecret) copySecret.focus(); // move focus into the result (AT announces; copy in reach)
         } catch (err) {
-          // wrong phrase: keep heldBlob so the user can fix the words and retry locally (no second burn)
+          if (pageHidden) return;
+          // A wrong phrase leaves the state machine's held ciphertext available for local retry only.
           perr.textContent = err.message === "auth_fail"
             ? "That phrase didn't open it — check the words and their order, then try again."
-            : (err.message || "Could not decrypt the secret.");
+            : (err.message === "request_timeout" || err.message === "reveal_outcome_unknown" || err instanceof TypeError
+              ? "Claim outcome unknown. The one-time ciphertext may already be gone; do not assume it can be retrieved again."
+              : (err.message === "invalid_utf8"
+              ? "This secret is not valid UTF-8 text and cannot be displayed here."
+              : (err.message || "Could not decrypt the secret.")));
           show(perr);
         } finally {
-          revealing = false;
+          revealClaim.advance("finish");
+          renderPskChips();
         }
       });
 

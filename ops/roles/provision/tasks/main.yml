@@ -1,0 +1,75 @@
+---
+# Runs as root on a FRESH box. Establishes safe alternate access — the deploy user reachable via
+# Tailscale SSH (identity-based, NO keys on the box) — BEFORE any hardening disables root/password
+# (that happens in the second play of step_1_setup.yml, once its tailnet connection succeeds).
+- name: Create the deploy user (sudo + docker groups)
+  ansible.builtin.user:
+    name: "{{ deploy_user }}"
+    groups: [sudo]
+    append: true
+    shell: /bin/bash
+
+- name: Passwordless sudo for the deploy user
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/90-{{ deploy_user }}"
+    content: "{{ deploy_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+# ── Tailscale: install + bring up with SSH — this IS the access path (keyless, identity-based),
+#    so no SSH key is ever installed on the box. Break-glass is the VPS provider's console. ──
+- name: Add the Tailscale apt key
+  ansible.builtin.get_url:
+    url: "https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_facts['distribution_release'] }}.noarmor.gpg"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+
+- name: Add the Tailscale apt repo
+  ansible.builtin.get_url:
+    url: "https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_facts['distribution_release'] }}.tailscale-keyring.list"
+    dest: /etc/apt/sources.list.d/tailscale.list
+    mode: "0644"
+
+- name: Install Tailscale
+  ansible.builtin.apt: { name: tailscale, state: present, update_cache: true }
+
+- name: Bring Tailscale up with SSH (idempotent)
+  ansible.builtin.command:
+    # `--advertise-tags` makes the box a TAGGED node so the tailnet ACL can target it (and, by never
+    # listing the tag as an ACL `src`, keep a compromised box from reaching your laptop). Requires the
+    # auth key to be created WITH this tag (see repository-root DEPLOYMENT.md → Configure Tailscale).
+    cmd: >-
+      tailscale up --ssh --hostname {{ tailscale_hostname }}
+      {{ ('--advertise-tags=' + tailscale_tag) if (tailscale_tag | default('')) != '' else '' }}
+      --authkey {{ tailscale_auth_key }}
+  register: _ts
+  changed_when: "'Success' in (_ts.stdout | default(''))"
+  no_log: true
+
+# ── firewall: deny ALL inbound (tailscale + cloudflared dial out; nothing needs a port) ──
+- name: Install ufw
+  ansible.builtin.apt: { name: ufw, state: present }
+
+- name: ufw default policies
+  community.general.ufw: { direction: "{{ item.dir }}", policy: "{{ item.pol }}" }
+  loop:
+    - { dir: incoming, pol: deny }
+    - { dir: outgoing, pol: allow }
+
+- name: Allow all traffic on the Tailscale interface (the admin plane must survive deny-inbound)
+  community.general.ufw: { rule: allow, direction: in, interface: tailscale0 }
+
+- name: Enable ufw
+  community.general.ufw: { state: enabled }
+
+# ── automatic security updates (a box that self-patches doesn't rot) ──
+- name: Install unattended-upgrades
+  ansible.builtin.apt: { name: unattended-upgrades, state: present }
+
+- name: Enable automatic security updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: "0644"

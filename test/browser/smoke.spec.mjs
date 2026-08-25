@@ -17,11 +17,56 @@ async function addWord(page, inputSel, word) {
   await page.press(inputSel, "Enter");
 }
 
+// clipboardData is read-only. Firefox deliberately ignores it in the ClipboardEvent constructor,
+// so install it on a plain synthetic event to exercise the same application paste handler in every
+// engine without depending on the test runner's host clipboard.
+async function pasteText(page, inputSel, text) {
+  await page.locator(inputSel).evaluate((input, pastedText) => {
+    input.focus();
+    const data = new DataTransfer();
+    data.setData("text/plain", pastedText);
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: data });
+    input.dispatchEvent(event);
+  }, text);
+}
+
+// Model a peer that has accepted the request and returned successful headers, but never finishes its JSON
+// body. The stream follows the request's AbortSignal like a real fetch response so the test observes the
+// user-facing deadline rather than reaching into crypto-app.js internals.
+async function stallSuccessfulJsonBody(page, pathname) {
+  await page.addInitScript((stalledPath) => {
+    const realFetch = window.fetch.bind(window);
+    window.__bpStalledBodyStarted = false;
+    window.fetch = async (input, options = {}) => {
+      const raw = input instanceof Request ? input.url : input;
+      const url = new URL(raw, window.location.href);
+      if (url.pathname !== stalledPath) return realFetch(input, options);
+
+      let bodyController;
+      const body = new ReadableStream({
+        start(controller) {
+          bodyController = controller;
+          controller.enqueue(new TextEncoder().encode('{"incomplete":'));
+        }
+      });
+      const signal = options.signal || (input instanceof Request ? input.signal : null);
+      if (signal) {
+        signal.addEventListener("abort", () => {
+          bodyController.error(signal.reason || new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+      }
+      window.__bpStalledBodyStarted = true;
+      return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+    };
+  }, pathname);
+}
+
 // Passphrase-only flow (suite 0x02): words are GENERATED and shown on load; the link is key-less; the
 // recipient rebuilds the phrase from the wordlist via autocomplete. Exercises generation, the key-less
 // link, order-sensitivity, and the single-burn + local-retry (no second burn) logic.
 test("passphrase create → key-less link → chip reveal (wrong order, then right)", async ({ page, context }) => {
-  const secret = "psk secret " + rnd();
+  const secret = "\uFEFFpsk 秘密 🧪 decomposed e\u0301\n" + rnd();
 
   await page.goto("/");
   await page.fill("#bp-input", secret);
@@ -36,6 +81,7 @@ test("passphrase create → key-less link → chip reveal (wrong order, then rig
 
   await expect(page.locator("#bp-result")).toBeVisible();
   await expect(page.locator("#bp-create")).toBeHidden();
+  await expect(page.locator("#bp-input")).toHaveValue(""); // accepted plaintext is purged from hidden DOM
   // the result echoes the phrase as chips, and the link carries NO key
   await expect(page.locator("#bp-pass-out .chip")).toHaveCount(7);
   expect(await chipTexts(page.locator("#bp-pass-out .chip"))).toEqual(words);
@@ -67,8 +113,193 @@ test("passphrase create → key-less link → chip reveal (wrong order, then rig
   await expect(r.locator("#bp-psk-chips .chip")).toHaveCount(0);
   for (const w of words) await addWord(r, "#bp-psk-input", w);
   await r.locator("#bp-psk-reveal").click();
-  await expect(r.locator("#bp-secret")).toHaveText(secret);
+  await expect(r.locator("#bp-revealed")).toBeVisible();
+  expect(await r.locator("#bp-secret").textContent()).toBe(secret);
   await expect(r.locator("#bp-copy-secret")).toBeVisible();
+
+  // Navigation/page close must release every page-held plaintext, phrase, link, and management-token
+  // reference we control (including a page entering the back/forward cache).
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
+  await expect(page.locator("#bp-link")).toHaveValue("");
+  await expect(page.locator("#bp-link")).not.toHaveAttribute("data-full-url");
+  await expect(page.locator("#bp-pass-out")).toHaveText("");
+
+  await r.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
+  await expect(r.locator("#bp-secret")).toHaveText("");
+});
+
+test("create reports an unknown outcome when successful response headers have a stalled body", async ({ page }) => {
+  await page.clock.install();
+  await stallSuccessfulJsonBody(page, "/api/secrets");
+  await page.goto("/");
+
+  const secret = "stalled-create-body " + rnd();
+  await page.fill("#bp-input", secret);
+  await page.getByRole("button", { name: "Encrypt & create link" }).click();
+  await page.waitForFunction(() => window.__bpStalledBodyStarted === true);
+  await page.clock.fastForward(12_001);
+
+  await expect(page.locator("#bp-error")).toContainText(/creation outcome unknown/i);
+  await expect(page.locator("#bp-result")).toBeHidden();
+  await expect(page.locator("#bp-input")).toHaveValue(secret);
+});
+
+test("reveal reports an unknown claim when successful response headers have a stalled body", async ({ page, context }) => {
+  await page.goto("/");
+  await page.fill("#bp-input", "stalled-reveal-body " + rnd());
+  const words = await chipTexts(page.locator("#bp-pass-chips .chip"));
+  await page.getByRole("button", { name: "Encrypt & create link" }).click();
+  await expect(page.locator("#bp-result")).toBeVisible();
+  const link = await page.locator("#bp-link").getAttribute("data-full-url");
+
+  const r = await context.newPage();
+  await r.clock.install();
+  await stallSuccessfulJsonBody(r, new URL(link).pathname.replace("/s/", "/api/secrets/") + "/reveal");
+  await r.goto(link);
+  await pasteText(r, "#bp-psk-input", words.join(" "));
+  await r.locator("#bp-psk-reveal").click();
+  await r.waitForFunction(() => window.__bpStalledBodyStarted === true);
+  await r.clock.fastForward(12_001);
+
+  await expect(r.locator("#bp-psk-error")).toContainText(/claim outcome unknown/i);
+  await expect(r.locator("#bp-psk-reveal")).toContainText(/try claim again.*may be gone/i);
+  await expect(r.locator("#bp-revealed")).toBeHidden();
+  await expect(r.locator("#bp-secret")).toHaveText("");
+});
+
+test("an unknown reveal can be retried only by explicit confirmed user action", async ({ page, context }) => {
+  const secret = "retry-after-no-request " + rnd();
+  await page.goto("/");
+  await page.fill("#bp-input", secret);
+  const words = await chipTexts(page.locator("#bp-pass-chips .chip"));
+  await page.getByRole("button", { name: "Encrypt & create link" }).click();
+  await expect(page.locator("#bp-result")).toBeVisible();
+  const link = await page.locator("#bp-link").getAttribute("data-full-url");
+
+  const r = await context.newPage();
+  let revealRequests = 0;
+  await r.route("**/api/secrets/*/reveal", async (route) => {
+    revealRequests++;
+    if (revealRequests === 1) await route.abort("failed");
+    else await route.continue();
+  });
+  await r.goto(link);
+  await pasteText(r, "#bp-psk-input", words.join(" "));
+  await r.locator("#bp-psk-reveal").click();
+
+  await expect(r.locator("#bp-psk-error")).toContainText(/claim outcome unknown/i);
+  await expect(r.locator("#bp-psk-reveal")).toContainText(/try claim again.*may be gone/i);
+  expect(revealRequests).toBe(1);
+
+  let warning = "";
+  r.once("dialog", async (dialog) => {
+    warning = dialog.message();
+    await dialog.dismiss();
+  });
+  await r.locator("#bp-psk-reveal").click();
+  expect(warning).toMatch(/previous claim may already have removed the ciphertext/i);
+  expect(revealRequests).toBe(1);
+
+  r.once("dialog", (dialog) => dialog.accept());
+  await r.locator("#bp-psk-reveal").click();
+  await expect(r.locator("#bp-secret")).toHaveText(secret);
+  expect(revealRequests).toBe(2);
+});
+
+test("an explicit retry becomes unavailable when the first claim response was lost", async ({ page, context }) => {
+  await page.goto("/");
+  await page.fill("#bp-input", "lost-response " + rnd());
+  const words = await chipTexts(page.locator("#bp-pass-chips .chip"));
+  await page.getByRole("button", { name: "Encrypt & create link" }).click();
+  await expect(page.locator("#bp-result")).toBeVisible();
+  const link = await page.locator("#bp-link").getAttribute("data-full-url");
+
+  const r = await context.newPage();
+  let revealRequests = 0;
+  await r.route("**/api/secrets/*/reveal", async (route) => {
+    revealRequests++;
+    if (revealRequests === 1) {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else {
+      await route.continue();
+    }
+  });
+  await r.goto(link);
+  await pasteText(r, "#bp-psk-input", words.join(" "));
+  await r.locator("#bp-psk-reveal").click();
+  await expect(r.locator("#bp-psk-error")).toContainText(/claim outcome unknown/i);
+
+  r.once("dialog", (dialog) => dialog.accept());
+  await r.locator("#bp-psk-reveal").click();
+  await expect(r.locator("#bp-psk-error")).toContainText(/secret is unavailable/i);
+  await expect(r.locator("#bp-psk-reveal")).toBeDisabled();
+  await expect(r.locator("#bp-psk-reveal")).toContainText(/secret unavailable/i);
+  expect(revealRequests).toBe(2);
+});
+
+test("reveal disables the button and sends one request across rapid repeated clicks", async ({ page, context }) => {
+  const secret = "rapid-clicks " + rnd();
+  await page.goto("/");
+  await page.fill("#bp-input", secret);
+  const words = await chipTexts(page.locator("#bp-pass-chips .chip"));
+  await page.getByRole("button", { name: "Encrypt & create link" }).click();
+  await expect(page.locator("#bp-result")).toBeVisible();
+  const link = await page.locator("#bp-link").getAttribute("data-full-url");
+
+  const r = await context.newPage();
+  let revealRequests = 0;
+  let releaseReveal;
+  let markRevealStarted;
+  const revealStarted = new Promise((resolve) => { markRevealStarted = resolve; });
+  const revealGate = new Promise((resolve) => { releaseReveal = resolve; });
+  await r.route("**/api/secrets/*/reveal", async (route) => {
+    revealRequests++;
+    markRevealStarted();
+    await revealGate;
+    await route.continue();
+  });
+  await r.goto(link);
+  await pasteText(r, "#bp-psk-input", words.join(" "));
+
+  const revealButton = r.locator("#bp-psk-reveal");
+  await revealButton.evaluate((button) => {
+    button.click();
+    button.click();
+    button.click();
+  });
+  await revealStarted;
+  const disabledWhilePending = await revealButton.isDisabled();
+  const requestsWhilePending = revealRequests;
+
+  releaseReveal();
+  await expect(r.locator("#bp-secret")).toHaveText(secret);
+  expect(requestsWhilePending).toBe(1);
+  expect(disabledWhilePending).toBe(true);
+});
+
+test("create rejects malformed Unicode and oversized UTF-8 before encryption or upload", async ({ page }) => {
+  let uploads = 0;
+  await page.route("**/api/secrets", async (route) => {
+    uploads++;
+    await route.continue();
+  });
+  await page.goto("/");
+
+  await page.evaluate(() => {
+    const input = document.querySelector("#bp-input");
+    input.value = "before\uD800after";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.locator("#bp-create-btn").click();
+  await expect(page.locator("#bp-error")).toContainText(/malformed Unicode/i);
+  expect(uploads).toBe(0);
+
+  await page.fill("#bp-input", "a".repeat(65536 - 45 + 1));
+  await page.locator("#bp-create-btn").click();
+  await expect(page.locator("#bp-error")).toContainText(/over the 64 KB/i);
+  expect(uploads).toBe(0);
 });
 
 // Reveal convenience: the recipient can PASTE the whole space-separated phrase and every word becomes a
@@ -85,20 +316,14 @@ test("reveal: pasting the whole phrase makes a chip per word (incl. the last) an
   const r = await context.newPage();
   await r.goto(link);
   // simulate a paste of the full phrase (space-joined, no trailing space) into the input
-  await r.evaluate((t) => {
-    const input = document.querySelector("#bp-psk-input");
-    input.focus();
-    const dt = new DataTransfer();
-    dt.setData("text", t);
-    input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-  }, words.join(" "));
+  await pasteText(r, "#bp-psk-input", words.join(" "));
   await expect(r.locator("#bp-psk-chips .chip")).toHaveCount(7); // all 7, including the last word
   expect(await chipTexts(r.locator("#bp-psk-chips .chip"))).toEqual(words);
   await r.locator("#bp-psk-reveal").click();
   await expect(r.locator("#bp-secret")).toHaveText(secret);
 });
 
-test("reveal: a runaway paste is capped so it can't flood the DOM", async ({ page, context }) => {
+test("reveal: a runaway paste is rejected instead of truncated into the DOM", async ({ page, context }) => {
   await page.goto("/");
   await page.fill("#bp-input", "cap-flow " + rnd());
   await page.getByRole("button", { name: "Encrypt & create link" }).click();
@@ -109,14 +334,9 @@ test("reveal: a runaway paste is capped so it can't flood the DOM", async ({ pag
   await r.goto(link);
   // paste 200 DISTINCT tokens (so dedup can't bound it) — the handler must cap the chips at MAX_PASTE (64)
   const many = Array.from({ length: 200 }, (_, i) => "tok" + i).join(" ");
-  await r.evaluate((t) => {
-    const input = document.querySelector("#bp-psk-input");
-    input.focus();
-    const dt = new DataTransfer();
-    dt.setData("text", t);
-    input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-  }, many);
-  await expect(r.locator("#bp-psk-chips .chip")).toHaveCount(64);
+  await pasteText(r, "#bp-psk-input", many);
+  await expect(r.locator("#bp-psk-chips .chip")).toHaveCount(0);
+  await expect(r.locator("#bp-psk-error")).toContainText(/too large/i);
 });
 
 // Create-side word controls: tapping a chip rerolls just that word; "choose my own words" opens a
@@ -199,6 +419,7 @@ test("autocomplete commits a word on Space and on Tab", async ({ page }) => {
 // Create UX: the result replaces the form, burn shows a clear destroyed state and hides the now-useless
 // link, and "Create another" resets to a fresh form with a newly generated phrase.
 test("create UX: result replaces form, burn destroys, reset regenerates a fresh phrase", async ({ page }) => {
+  page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/");
   await page.fill("#bp-input", "burn-me " + rnd());
   await page.getByRole("button", { name: "Encrypt & create link" }).click();
@@ -215,6 +436,58 @@ test("create UX: result replaces form, burn destroys, reset regenerates a fresh 
   await expect(page.locator("#bp-result")).toBeHidden();
   await expect(page.locator("#bp-input")).toHaveValue("");
   await expect(page.locator("#bp-pass-chips .chip")).toHaveCount(7); // a fresh phrase is regenerated
+});
+
+test("burn does not claim success when the limiter rejects it", async ({ page }) => {
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("/");
+  await page.fill("#bp-input", "rate-limited-burn " + rnd());
+  await page.getByRole("button", { name: "Encrypt & create link" }).click();
+  await expect(page.locator("#bp-result")).toBeVisible();
+
+  await page.route("**/api/secrets/*/burn", (route) =>
+    route.fulfill({ status: 429, contentType: "application/json", body: '{"error":"rate limited"}' })
+  );
+  await page.getByRole("button", { name: "Burn it now" }).click();
+
+  await expect(page.locator("#bp-share")).toBeVisible();
+  await expect(page.locator("#bp-burned")).toBeHidden();
+  await expect(page.locator("#bp-burn")).toBeEnabled();
+  await expect(page.locator("#bp-burn")).toContainText("Burn it now");
+});
+
+test("burn does not claim it destroyed a row that is already unavailable", async ({ page }) => {
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("/");
+  await page.fill("#bp-input", "already-read-burn " + rnd());
+  await page.getByRole("button", { name: "Encrypt & create link" }).click();
+  await expect(page.locator("#bp-result")).toBeVisible();
+  const link = await page.locator("#bp-link").getAttribute("data-full-url");
+  const id = new URL(link).pathname.split("/").pop();
+
+  const reveal = await page.request.post(`/api/secrets/${id}/reveal`, { data: {} });
+  expect(reveal.status()).toBe(200);
+  await page.getByRole("button", { name: "Burn it now" }).click();
+
+  await expect(page.locator("#bp-share")).toBeVisible();
+  await expect(page.locator("#bp-burned")).toBeHidden();
+  await expect(page.locator("#bp-burn")).toBeEnabled();
+});
+
+test("clipboard failure is reported instead of claiming stale contents were copied", async ({ page }) => {
+  await page.goto("/");
+  await page.fill("#bp-input", "clipboard " + rnd());
+  await page.getByRole("button", { name: "Encrypt & create link" }).click();
+  await expect(page.locator("#bp-result")).toBeVisible();
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("denied")) }
+    });
+  });
+  await page.locator("#bp-copy").click();
+  await expect(page.locator("#bp-copy")).toContainText("Copy failed");
 });
 
 // Purist reveal: a #fragment means a link-mode (0x01) link this client doesn't mint or open — it's

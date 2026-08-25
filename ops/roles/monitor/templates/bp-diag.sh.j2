@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Hourly: sample BEAM stats (so a slow leak shows as a curve, not a corpse) and — ONLY if the app
+# actually answers — ping the external heartbeat. If the app is down, no ping fires and your
+# external monitor (e.g. Healthchecks.io) alerts you. This is the dead-man's switch.
+cd {{ remote_dir }} || exit 0
+healthy=true
+if out=$(docker compose --project-name {{ compose_project_name }} exec -T app bin/burnerpad rpc '
+  m = :erlang.memory()
+  s = Burnerpad.Store.metrics()
+  a = Burnerpad.Abuse.metrics()
+  daily = JSON.encode!(Burnerpad.DailyStats.daily())
+  IO.puts("total=#{m[:total]} binary=#{m[:binary]} ets=#{m[:ets]} " <>
+    "atoms=#{:erlang.system_info(:atom_count)} procs=#{:erlang.system_info(:process_count)} " <>
+    "ports=#{:erlang.system_info(:port_count)} resident=#{s.resident} capacity=#{s.capacity} " <>
+    "created=#{s.created} revealed=#{s.revealed} burned=#{s.burned} purged=#{s.purged} " <>
+    "expired=#{s.expired} internal_errors=#{s.internal_errors_total} create_busy=#{s.create_busy_total} " <>
+    "create_queue=#{s.create_queue} throttled=#{a.throttled_total} banned=#{a.banned_total} " <>
+    "active_bans=#{a.active_bans} admission_busy=#{a.admission_busy_total} " <>
+    "admission_queue=#{a.admission_queue} daily=#{daily}")' 2>/dev/null); then
+  echo "$(date -u +%FT%TZ) $out" >> /var/log/bp-diag.log
+else
+  echo "$(date -u +%FT%TZ) APP_DOWN (rpc failed)" >> /var/log/bp-diag.log
+  healthy=false
+fi
+
+disk=$(df -P {{ remote_dir }} | awk 'NR==2 {gsub(/%/, "", $5); print $5}')
+inodes=$(df -Pi {{ remote_dir }} | awk 'NR==2 {gsub(/%/, "", $5); print $5}')
+stats=$(docker stats --no-stream --format '{% raw %}{{.Name}} {{.CPUPerc}} {{.MemPerc}}{% endraw %}' 2>/dev/null || true)
+
+if [ "${disk:-100}" -ge {{ disk_alert_percent }} ] || [ "${inodes:-100}" -ge {{ inode_alert_percent }} ]; then
+  echo "$(date -u +%FT%TZ) RESOURCE_WARN disk=${disk:-unknown}% inodes=${inodes:-unknown}%" >> /var/log/bp-diag.log
+  healthy=false
+fi
+
+if printf '%s\n' "$stats" | awk -v cpu={{ cpu_alert_percent }} -v mem={{ memory_alert_percent }} '
+  {gsub(/%/, "", $2); gsub(/%/, "", $3); if ($2+0 >= cpu || $3+0 >= mem) bad=1} END {exit !bad}'; then
+  echo "$(date -u +%FT%TZ) RESOURCE_WARN container_cpu_or_memory" >> /var/log/bp-diag.log
+  healthy=false
+fi
+
+container_id=$(docker compose --project-name {{ compose_project_name }} ps -q app)
+state_file=/var/lib/burnerpad-monitor/app-restarts
+if [ -z "$container_id" ]; then
+  echo "$(date -u +%FT%TZ) CONTAINER_WARN missing" >> /var/log/bp-diag.log
+  healthy=false
+else
+  read -r restarts oom < <(docker inspect "$container_id" \
+    --format '{% raw %}{{.RestartCount}} {{.State.OOMKilled}}{% endraw %}')
+  previous=$restarts
+  if [ -r "$state_file" ]; then read -r previous < "$state_file"; fi
+  if [ "$restarts" -gt "$previous" ] || [ "$oom" = true ]; then
+    echo "$(date -u +%FT%TZ) CONTAINER_WARN restart_or_oom" >> /var/log/bp-diag.log
+    healthy=false
+  fi
+  printf '%s\n' "$restarts" > "$state_file"
+fi
+
+if [ "$healthy" = true ]; then
+{% if heartbeat_url | default('') %}
+  curl -fsS -m 10 "{{ heartbeat_url }}" >/dev/null 2>&1 || true
+{% else %}
+  : # A heartbeat is mandatory in production; keep this rendered template syntactically valid for checks.
+{% endif %}
+fi

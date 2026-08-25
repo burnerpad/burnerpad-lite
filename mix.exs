@@ -1,26 +1,35 @@
 defmodule Burnerpad.MixProject do
   use Mix.Project
 
+  @app_version Path.join(__DIR__, "VERSION") |> File.read!() |> String.trim()
+
   def project do
     [
       app: :burnerpad,
-      version: "0.1.0",
-      elixir: "~> 1.18",
+      version: @app_version,
+      elixir: "~> 1.20.3",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      aliases: aliases()
+      aliases: aliases(),
+      releases: releases()
     ]
   end
 
-  # `mix setup` fetches the crypto submodule then deps. `mix test.crypto` runs the vendored bundle's own
-  # conformance test under Node (so the pinned bytes are verified in place); `mix test.core` unit-tests the
-  # DOM-free `Core` of the page driver (crypto-app.js) under Node. Both require Node ≥ 20.
+  # A named release so `rel/env.sh.eex` (loopback-only distribution, C1) is picked up at build.
+  defp releases do
+    [burnerpad: [include_executables_for: [:unix]]]
+  end
+
+  # `mix setup` fetches the crypto submodule then deps. `mix test.crypto` runs the vendored repository's
+  # complete, exact gate (reproducible vectors, two-backend reference, conformance, fuzz/type/package edge
+  # tests); `mix test.core` unit-tests the DOM-free Core of crypto-app.js. Both require Node ≥ 20.
   defp aliases do
     [
       setup: ["cmd git submodule update --init --recursive", "deps.get"],
-      "test.crypto": ["cmd node priv/static/vendor/crypto-js/test/conformance.mjs"],
-      "test.core": ["cmd node --test test/crypto/core_test.cjs"]
+      "test.crypto": ["cmd npm test --prefix priv/static/vendor/crypto-js"],
+      "test.core": ["cmd node --test test/crypto/core_test.cjs"],
+      "test.edge": ["cmd node --test test/smoke/*.mjs"]
     ]
   end
 

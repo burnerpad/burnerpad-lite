@@ -3,8 +3,8 @@
 
 defmodule BurnerpadWeb.AbusePlug do
   @moduledoc """
-  Runs early in the pipeline (before static files, so every request counts). Resolves the client IP,
-  asks `Burnerpad.Abuse` for a decision, and short-circuits abusive requests cheaply with `429`/`503`.
+  Runs after static files and `/healthz`, so only dynamic requests count. Resolves the client IP, asks
+  `Burnerpad.Abuse` for a decision, and short-circuits abusive requests cheaply with `429`/`503`.
   """
   import Plug.Conn
   alias Burnerpad.Abuse

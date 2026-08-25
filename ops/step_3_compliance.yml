@@ -1,0 +1,32 @@
+---
+# Quarterly and after every host/role upgrade:
+#   ansible-playbook step_3_compliance.yml --check --diff
+# Any reported change is drift. Review it, then deliberately rerun without --check to remediate.
+- name: Burnerpad host hardening compliance
+  hosts: burnerpad
+  become: true
+  tasks:
+    - name: Re-evaluate the pinned OS hardening role
+      ansible.builtin.include_role:
+        name: devsec.hardening.os_hardening
+
+    - name: Re-evaluate the pinned SSH hardening role
+      ansible.builtin.include_role:
+        name: devsec.hardening.ssh_hardening
+
+    - name: Re-evaluate Burnerpad-specific hardening
+      ansible.builtin.include_role:
+        name: harden
+
+    - name: Validate the deployed Compose model
+      ansible.builtin.command: >-
+        docker compose --project-name {{ compose_project_name }}
+        -f {{ remote_dir }}/docker-compose.yml
+        --env-file {{ remote_dir }}/.env config --quiet
+      changed_when: false
+
+    - name: Confirm swap remains disabled
+      ansible.builtin.command: swapon --show --noheadings
+      register: _swap
+      changed_when: false
+      failed_when: _swap.stdout | trim | length > 0

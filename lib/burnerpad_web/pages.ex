@@ -16,7 +16,7 @@ defmodule BurnerpadWeb.Pages do
   def home do
     body = """
     <div id="bp-intro">
-    <h1 class="hero-title">Securely share one-read secrets</h1>
+    <h1 class="hero-title">Securely share one-claim secrets</h1>
     <p class="hero-sub">Encrypted in your browser before it leaves your device.</p>
 
     <ul class="features" aria-label="Why it's safe">
@@ -30,7 +30,7 @@ defmodule BurnerpadWeb.Pages do
       </li>
       <li class="feature">
         <svg class="ico ico-solid" aria-hidden="true"><use href="#i-flame"></use></svg>
-        <div><div class="feature-name">One read, then gone</div><div class="feature-sub">Self-destructs, nothing on disk</div></div>
+        <div><div class="feature-name">At most one claim</div><div class="feature-sub">The server row is removed atomically</div></div>
       </li>
     </ul>
     </div>
@@ -42,7 +42,7 @@ defmodule BurnerpadWeb.Pages do
           <span class="panel-title">Your secret</span>
           <span id="bp-create-meta" class="meta" hidden></span>
         </div>
-        <textarea id="bp-input" placeholder="Paste a password, API key, or .env block…" required></textarea>
+        <textarea id="bp-input" placeholder="Paste a password, API key, or .env block…" required spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
       </section>
 
       <section class="panel">
@@ -76,7 +76,7 @@ defmodule BurnerpadWeb.Pages do
           <span class="done-check"><svg class="ico" aria-hidden="true"><use href="#i-check"></use></svg></span>
           <div>
             <div class="done-title">Encrypted &amp; ready</div>
-            <div class="done-sub">It opens <strong>once</strong>, then it's gone — or in <strong>24h</strong> if unopened. Hand it over in two parts, kept on <strong>separate channels</strong>.</div>
+            <div class="done-sub">It can be claimed <strong>at most once</strong>, then it's gone — or within <strong id="bp-expiry">#{expiry_label()}</strong> if unopened. Hand it over in two parts, kept on <strong>separate channels</strong>.</div>
           </div>
         </div>
 
@@ -84,7 +84,7 @@ defmodule BurnerpadWeb.Pages do
           <div class="panel-head"><span class="badge">1</span><span class="panel-title">Send the link</span></div>
           <p class="hint">No key inside — drop it in email, Slack, a ticket.</p>
           <div class="iobox">
-            <input id="bp-link" type="text" class="mono iobox-field" readonly aria-label="Your one-time link" />
+            <input id="bp-link" type="text" class="mono iobox-field" readonly aria-label="Your one-claim link" />
             <button id="bp-copy" type="button" class="iobox-btn"><svg class="ico" aria-hidden="true"><use href="#i-copy"></use></svg><span class="btn-label">Copy</span></button>
           </div>
         </section>
@@ -103,17 +103,18 @@ defmodule BurnerpadWeb.Pages do
             <svg class="ico" aria-hidden="true"><use href="#i-revert"></use></svg>
             <span class="burn-text">
               <span class="burn-title">Sent it by mistake?</span>
-              <span class="burn-sub">Destroy it now, before it's opened — this can't be undone.</span>
+              <span class="burn-sub">Remove the server's ciphertext row now — this can't be undone.</span>
             </span>
           </div>
           <button id="bp-burn" type="button" class="danger"><svg class="ico ico-solid" aria-hidden="true"><use href="#i-flame"></use></svg><span class="btn-label">Burn it now</span></button>
+          <p id="bp-burn-error" class="error" hidden></p>
         </div>
       </div>
 
       <div id="bp-burned" class="burned" hidden>
         <svg class="burned-mark" aria-hidden="true"><use href="#i-logo"></use></svg>
         <h2>Burned</h2>
-        <p>This secret has been destroyed — the link no longer works.</p>
+        <p>The server confirmed that its ciphertext row was removed — the link can no longer claim it.</p>
       </div>
 
       <div class="again-row">
@@ -122,7 +123,7 @@ defmodule BurnerpadWeb.Pages do
     </section>
     """
 
-    Layout.document("Burnerpad — securely share one-read secrets", body)
+    Layout.document("Burnerpad — securely share one-claim secrets", body)
   end
 
   @doc "The reveal interstitial for a live secret `id` (already normalized)."
@@ -135,7 +136,7 @@ defmodule BurnerpadWeb.Pages do
     </section>
 
     <section id="bp-psk" hidden>
-      <h2>A one-time secret is waiting for you</h2>
+      <h2>A one-claim secret is waiting for you</h2>
       <p class="lead">Enter the passphrase you were given — the words, <strong>in order</strong>.</p>
       <div class="panel">
         <div class="panel-head">
@@ -151,7 +152,7 @@ defmodule BurnerpadWeb.Pages do
           </div>
           <ul id="bp-psk-suggest" class="suggest" role="listbox" hidden></ul>
         </div>
-        <p class="warn warn-inline"><svg class="ico" aria-hidden="true"><use href="#i-warn"></use></svg><span>You can open this <strong>once</strong> — revealing destroys it on the server. If the phrase is wrong you can retry here, but <strong>don't reload</strong> afterward: this page then holds the only copy.</span></p>
+        <p class="warn warn-inline"><svg class="ico" aria-hidden="true"><use href="#i-warn"></use></svg><span>The server removes the ciphertext <strong>before</strong> completing its reply. If the network fails, the outcome is unknown. A retry works only if the first request never claimed it, so you must confirm before trying again. After the ciphertext arrives, a wrong phrase can be retried only on this page — <strong>don't reload</strong>.</span></p>
       </div>
       <button id="bp-psk-reveal" class="primary" data-id="#{id}"><svg class="ico" aria-hidden="true"><use href="#i-type"></use></svg><span class="btn-label">Enter at least 7 words</span></button>
       <p id="bp-psk-error" class="error" hidden></p>
@@ -162,7 +163,7 @@ defmodule BurnerpadWeb.Pages do
         <span class="done-check"><svg class="ico" aria-hidden="true"><use href="#i-check"></use></svg></span>
         <div>
           <div class="done-title">Decrypted</div>
-          <div class="done-sub">Copy it now — you won't see it again.</div>
+          <div class="done-sub">Copy it now — this page holds the recovered plaintext only until you leave or reload.</div>
         </div>
       </div>
       <div class="codeblock">
@@ -171,7 +172,7 @@ defmodule BurnerpadWeb.Pages do
           <button id="bp-copy-secret" type="button" class="copy-secret"><svg class="ico" aria-hidden="true"><use href="#i-copy"></use></svg><span class="btn-label">Copy</span></button>
         </div>
         <div class="codeblock-body">
-          <pre id="bp-secret"></pre>
+          <pre id="bp-secret" translate="no" class="notranslate"></pre>
           <div id="bp-secret-fade" class="codeblock-fade" aria-hidden="true"></div>
         </div>
       </div>
@@ -185,8 +186,8 @@ defmodule BurnerpadWeb.Pages do
   end
 
   @doc """
-  The 404 / not-found page — served for a gone, expired, OR unknown id (no existence oracle: the same page
-  for all three). `heading` + `message` are the two lines under the big "404". No crypto scripts.
+  The 404 / not-found page — served for a gone, expired, OR unknown id (the same page for all three; a live
+  id still necessarily returns 200). `heading` + `message` are the two lines under the big "404". No crypto scripts.
   """
   def status(heading, message) do
     body = """
@@ -201,25 +202,42 @@ defmodule BurnerpadWeb.Pages do
     Layout.document("Not found · Burnerpad", body, scripts: false)
   end
 
-  @doc "Public, aggregate transparency page. No scripts; numbers only (nothing about any secret)."
+  @doc "Public aggregate transparency page. No scripts and no visitor-level data."
   def stats(m) do
+    today = List.last(m.daily_visits)
+    today_visits = Map.fetch!(today, :visits)
+    today_created = Map.fetch!(today, :secrets_created)
+
     body = """
     <h2 class="page-title">Transparency</h2>
     <p class="lead">Aggregate counts only — no contents, IDs, or IPs. Everything lives in RAM and resets on restart.</p>
     <div class="stats">
-      #{stat(m.stored, "live secrets", "c-accent")}
-      #{stat(m.created, "created", "c-text")}
-      #{stat(m.revealed, "read", "c-good")}
+      #{stat(m.resident, "resident ciphertexts", "c-accent")}
+      #{stat(today_visits, "homepage visits today", "c-accent")}
+      #{stat(today_created, "secrets created today", "c-good")}
+      #{stat(m.created, "created since restart", "c-text")}
+      #{stat(m.claimed, "claimed since restart", "c-good")}
       #{stat(m.burned, "revoked", "c-text")}
       #{stat(m.expired, "expired", "c-muted")}
       #{stat(m.throttled_total, "requests throttled", "c-text")}
       #{stat(m.banned_total, "bans issued", "c-warn")}
       #{stat(m.active_bans, "sources blocked now", "c-danger")}
     </div>
+    <h2 id="activity-chart-title" class="page-title stats-section-title">Daily activity</h2>
+    <p class="lead">Homepage requests and successful secret creations, counted only as daily totals. No contents, IDs, IPs, cookies, or visitor identifiers are retained.</p>
+    <section class="activity-chart" aria-labelledby="activity-chart-title">
+      <div class="activity-legend" aria-hidden="true">
+        <span><span class="chart-swatch chart-swatch-visits"></span>Homepage visits</span>
+        <span><span class="chart-swatch chart-swatch-created"></span>Secrets created</span>
+      </div>
+      #{activity_chart(m.daily_visits)}
+      #{activity_table(m.daily_visits)}
+    </section>
     <div class="stats-meta">
-      <div>Capacity <span class="mono">#{commas(m.stored)} / #{commas(m.capacity)}</span></div>
+      <div>Version <span class="mono">#{Layout.escape(m.version)}</span></div>
+      <div>Resident capacity <span class="mono">#{commas(m.resident)} / #{commas(m.capacity)}</span></div>
       <div>Uptime <span class="mono">#{uptime(m.uptime_seconds)}</span></div>
-      <div><a href="/stats.json">JSON</a></div>
+      <div><a href="/api/stats">JSON</a></div>
     </div>
     <div class="again-row">
       <a class="link-btn" href="/"><svg class="ico" aria-hidden="true"><use href="#i-plus"></use></svg>Create another secret</a>
@@ -233,6 +251,156 @@ defmodule BurnerpadWeb.Pages do
   defp stat(n, label, color) do
     ~s(<div class="stat"><span class="num #{color}">#{commas(n)}</span><span class="lbl">#{label}</span></div>)
   end
+
+  defp activity_chart(days) do
+    max_count =
+      days
+      |> Enum.flat_map(&[&1.visits, &1.secrets_created])
+      |> Enum.max(fn -> 0 end)
+
+    {tick_step, axis_max} = chart_axis(max_count)
+    chart_width = 320
+    chart_height = 220
+    plot_left = 40
+    plot_right = 312
+    plot_top = 12
+    plot_bottom = 184
+    plot_height = plot_bottom - plot_top
+    group_width = (plot_right - plot_left) / length(days)
+
+    grid =
+      Enum.map_join(0..div(axis_max, tick_step), "\n", fn tick ->
+        value = tick * tick_step
+        y = plot_bottom - round(value * plot_height / axis_max)
+
+        """
+        <line class="chart-grid" x1="#{plot_left}" y1="#{y}" x2="#{plot_right}" y2="#{y}" />
+        <text class="chart-axis-label" x="#{plot_left - 5}" y="#{y + 3}" text-anchor="end">#{commas(value)}</text>
+        """
+      end)
+
+    bars =
+      days
+      |> Enum.with_index()
+      |> Enum.map_join("\n", fn {%{date: date, visits: visits, secrets_created: created}, index} ->
+        center = plot_left + group_width * (index + 0.5)
+
+        [
+          chart_bar(
+            center - 7,
+            visits,
+            axis_max,
+            plot_top,
+            plot_bottom,
+            plot_height,
+            "visits",
+            date
+          ),
+          chart_bar(
+            center + 1,
+            created,
+            axis_max,
+            plot_top,
+            plot_bottom,
+            plot_height,
+            "created",
+            date
+          )
+        ]
+        |> Enum.join("\n")
+      end)
+
+    last_index = length(days) - 1
+
+    labels =
+      days
+      |> Enum.with_index()
+      |> Enum.filter(fn {_day, index} ->
+        (rem(index, 2) == 0 and index != last_index - 1) or index == last_index
+      end)
+      |> Enum.map_join("\n", fn {%{date: date}, index} ->
+        center = plot_left + group_width * (index + 0.5)
+        short_date = date |> String.slice(5, 5) |> String.replace("-", "/")
+
+        ~s(<text class="chart-date" x="#{chart_number(center)}" y="202" text-anchor="middle">#{Layout.escape(short_date)}</text>)
+      end)
+
+    """
+    <svg class="activity-plot" viewBox="0 0 #{chart_width} #{chart_height}" role="img" aria-labelledby="activity-svg-title activity-svg-desc">
+      <title id="activity-svg-title">Daily homepage visits and secrets created</title>
+      <desc id="activity-svg-desc">Grouped bar chart for the last 14 UTC days. Orange bars are homepage visits and green bars are successfully created secrets. Exact values are available in the accompanying table.</desc>
+      #{grid}
+      <line class="chart-axis" x1="#{plot_left}" y1="#{plot_top}" x2="#{plot_left}" y2="#{plot_bottom}" />
+      #{bars}
+      #{labels}
+    </svg>
+    """
+  end
+
+  defp chart_bar(x, count, axis_max, plot_top, plot_bottom, plot_height, series, date) do
+    height = if count == 0, do: 0, else: max(round(count * plot_height / axis_max), 1)
+    y = max(plot_bottom - height, plot_top)
+
+    label =
+      case series do
+        "visits" -> "#{commas(count)} homepage visits on #{date}"
+        "created" -> "#{commas(count)} secrets created on #{date}"
+      end
+
+    """
+    <rect class="chart-bar chart-bar-#{series}" x="#{chart_number(x)}" y="#{y}" width="6" height="#{height}" rx="1">
+      <title>#{Layout.escape(label)}</title>
+    </rect>
+    """
+  end
+
+  defp activity_table(days) do
+    rows =
+      Enum.map_join(days, "\n", fn %{date: date, visits: visits, secrets_created: created} ->
+        """
+        <tr>
+          <th scope="row">#{Layout.escape(date)}</th>
+          <td>#{visits}</td>
+          <td>#{created}</td>
+        </tr>
+        """
+      end)
+
+    """
+    <div class="sr-only">
+      <table>
+        <caption>Daily homepage visits and successfully created secrets</caption>
+        <thead><tr><th scope="col">UTC date</th><th scope="col">Homepage visits</th><th scope="col">Secrets created</th></tr></thead>
+        <tbody>#{rows}</tbody>
+      </table>
+    </div>
+    """
+  end
+
+  defp chart_axis(max_count) do
+    rough_step = max(div(max_count + 4, 5), 1)
+    magnitude = chart_magnitude(rough_step)
+    normalized = rough_step / magnitude
+
+    multiplier =
+      cond do
+        normalized <= 1 -> 1
+        normalized <= 2 -> 2
+        normalized <= 5 -> 5
+        true -> 10
+      end
+
+    step = multiplier * magnitude
+    axis_max = if max_count <= 4, do: 4, else: div(max_count + step - 1, step) * step
+    {step, axis_max}
+  end
+
+  defp chart_magnitude(n), do: chart_magnitude(n, 1)
+  defp chart_magnitude(n, magnitude) when n < 10, do: magnitude
+  defp chart_magnitude(n, magnitude), do: chart_magnitude(div(n, 10), magnitude * 10)
+
+  defp chart_number(number) when is_integer(number), do: Integer.to_string(number)
+  defp chart_number(number), do: number |> Float.round(1) |> Float.to_string()
 
   # 12345 -> "12,345"
   defp commas(n) do
@@ -250,6 +418,16 @@ defmodule BurnerpadWeb.Pages do
   defp uptime(s) when s < 86_400, do: "#{div(s, 3600)}h #{rem(div(s, 60), 60)}m"
   defp uptime(s), do: "#{div(s, 86_400)}d #{rem(div(s, 3600), 24)}h"
 
+  defp expiry_label do
+    seconds = Config.get(:ttl_seconds)
+
+    cond do
+      rem(seconds, 3600) == 0 -> "#{div(seconds, 3600)}h"
+      rem(seconds, 60) == 0 -> "#{div(seconds, 60)}m"
+      true -> "#{seconds}s"
+    end
+  end
+
   @doc "Public Terms & Acceptable-Use page — a TEMPLATE rendered with operator placeholders from config."
   def terms do
     op = Layout.escape(Config.operator_name())
@@ -263,7 +441,7 @@ defmodule BurnerpadWeb.Pages do
     <div class="terms-card">
       <div class="terms-item">
         <h3 class="terms-h">1. What this is</h3>
-        <p class="terms-b">A free, no-accounts, end-to-end-encrypted one-time secret sharing service operated by #{op}. Your secret is encrypted in your browser; we store only opaque ciphertext. The decryption key never reaches our server — it stays in your browser and is rebuilt from a passphrase you share on a separate channel, and the link itself carries no key. We therefore <strong>cannot read, decrypt, scan, verify, index, or proactively moderate</strong> what you share.</p>
+        <p class="terms-b">A free, no-accounts, end-to-end-encrypted one-time secret sharing service operated by #{op}. In the unmodified official client, your secret is encrypted before upload and the server stores only opaque ciphertext. The passphrase is shared separately and the link carries no key. The normal service therefore <strong>does not receive and cannot read, scan, index, or proactively moderate</strong> your plaintext. As with any website, compromise of the live site or your device can replace or observe client code.</p>
       </div>
       <div class="terms-item">
         <h3 class="terms-h">2. No warranty</h3>
@@ -275,7 +453,7 @@ defmodule BurnerpadWeb.Pages do
       </div>
       <div class="terms-item">
         <h3 class="terms-h">4. Ephemeral — not storage</h3>
-        <p class="terms-b">Secrets are held in memory only, self-destruct on first read or when their timer expires, and are lost if the service restarts. This is not storage or backup; we do not guarantee retention, delivery, or recovery. Once a secret is gone, it cannot be recovered.</p>
+        <p class="terms-b">Ciphertext rows are held in application memory, atomically removed on the first claim, removed at expiry, and all lost when the service restarts or deploys. Removal happens before the claim response is delivered, so even the first claimant may receive nothing after a network failure. This is not storage or backup; we do not guarantee retention, delivery, or recovery.</p>
       </div>
       <div class="terms-item">
         <h3 class="terms-h">5. Acceptable use</h3>
@@ -297,15 +475,15 @@ defmodule BurnerpadWeb.Pages do
       </div>
       <div class="terms-item">
         <h3 class="terms-h">7. Reporting &amp; removal</h3>
-        <p class="terms-b">Because we cannot read content, moderation is reactive. To report abuse or illegal material, email <a href="mailto:#{email}">#{email}</a> with: (a) the secret's exact link or ID; (b) a clear explanation of why it is illegal or breaches the acceptable-use list above; (c) your name and a contact email; and (d) a statement that your report is accurate and made in good faith. We may remove (purge) a reported secret by its ID. We cannot retrieve or disclose content we are unable to decrypt.</p>
+        <p class="terms-b">Because we cannot read content, moderation is reactive. To report abuse or illegal material, email <a href="mailto:#{email}">#{email}</a> with: (a) the secret's exact link or ID; (b) a clear explanation of why it is illegal or breaches the acceptable-use list above; (c) your name and a contact email; and (d) a statement that your report is accurate and made in good faith. We may remove (purge) a reported secret by its ID. We cannot retrieve or disclose content we are unable to decrypt. Reports may contain contact details; we retain them only while needed to investigate or meet a legal obligation, then delete them.</p>
       </div>
       <div class="terms-item">
-        <h3 class="terms-h">8. Suspension, banning &amp; rate limiting</h3>
-        <p class="terms-b">We may, at our discretion and without notice, rate-limit, block, suspend, or permanently ban any user or IP address, or refuse service, for any reason — including suspected abuse.</p>
+        <h3 class="terms-h">8. Abuse controls &amp; service refusal</h3>
+        <p class="terms-b">We may refuse service or reject requests without notice, including for suspected abuse. The application uses per-network-source request limits, row and byte quotas, escalating temporary bans, and global request and creation ceilings. These controls do not identify an individual or guarantee permanent exclusion. People behind a shared NAT/CGNAT may be limited together, while distributed actors can use many sources and may still exhaust global capacity. Because we keep no source-to-secret mapping, limiting a source does not locate or remove secrets already accepted. A reported secret can be purged only when its exact link or ID is supplied; otherwise accepted rows leave through claim, expiry, restart, or deployment. Legitimate high-frequency or automated use should set a short <code>ttl</code> so its budget recycles quickly.</p>
       </div>
       <div class="terms-item">
         <h3 class="terms-h">9. Privacy</h3>
-        <p class="terms-b">We require no account, cannot read your secrets, keys, or passphrases, and never link your IP address to a secret. We process client IP addresses only to apply rate limiting and abuse controls; our lawful basis is our legitimate interest in keeping the service available and preventing abuse (GDPR / Andorra Qualified Law 29/2021, Art. 6(1)(f)). This processing is transient — rate-limit counters reset each minute, temporary bans last at most 24 hours, we keep no persistent IP-to-secret log, and operational logs are rotated within a short, bounded window. The data controller is #{op} (#{juris}); for privacy questions or to exercise your rights (access, erasure, objection) email <a href="mailto:#{email}">#{email}</a>, and you may lodge a complaint with your data-protection supervisory authority (in Andorra, the APDA). We use Cloudflare to deliver and protect the service; it processes connection data (including your IP) as our processor. The service is therefore not "zero-log".</p>
+        <p class="terms-b">We require no account. The application processes client IP addresses only to apply rate limiting and abuse controls; our lawful basis is our legitimate interest in keeping the service available and preventing abuse (GDPR / Andorra Qualified Law 29/2021, Art. 6(1)(f)). Before any application counter is stored, each IP prefix is replaced with a purpose-separated keyed token whose random key exists only in RAM. Rate tokens are retained for at most about three minutes, ban/strike tokens for about 48 hours, and volume-budget tokens for at most the configured secret TTL plus about 16 minutes. The application keeps no source-to-secret mapping. Operational request events retain only an allowlisted route class, method, response status, duration, and release; they exclude secret IDs, management tokens, ciphertext, phrases, bodies, full request paths, raw IP addresses, pseudonymous source tokens, and source-IP mappings. The public stats page counts homepage requests and successful secret creations per UTC day in memory; it sets no analytics cookie and retains no IP, fingerprint, secret ID, or other visitor- or secret-level analytics record. Homepage figures are request counts, not unique people. The root-only host diagnostic retains hourly aggregate service/resource samples for up to 12 months; container event logs are size-bounded. These records contain none of the excluded capability or source fields above. The data controller is #{op} (#{juris}); for privacy questions or to exercise your rights (access, erasure, objection) email <a href="mailto:#{email}">#{email}</a>, and you may lodge a complaint with your data-protection supervisory authority (in Andorra, the APDA). We use Cloudflare to deliver and protect the service; it processes connection data (including your IP and requested URL) as our processor, and the operator must configure the shortest suitable Cloudflare retention. The service is therefore not "zero-log".</p>
       </div>
       <div class="terms-item">
         <h3 class="terms-h">10. Changes &amp; governing law</h3>
