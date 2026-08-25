@@ -176,7 +176,7 @@
     docker compose --project-name {{ compose_project_name }}
     -f {{ remote_dir }}/docker-compose.yml
     --env-file {{ remote_dir }}/.env exec -T app
-    wget -qO- http://127.0.0.1:4000/api/stats
+    /bin/busybox wget -qO- http://127.0.0.1:4000/api/stats
   register: _predeploy_stats
   changed_when: false
   failed_when: false
@@ -242,7 +242,7 @@
     docker compose --project-name {{ compose_project_name }}
     -f {{ remote_dir }}/docker-compose.yml
     --env-file {{ remote_dir }}/.env exec -T app
-    wget -qO- http://127.0.0.1:4000/api/stats
+    /bin/busybox wget -qO- http://127.0.0.1:4000/api/stats
   register: _running_stats
   changed_when: false
 

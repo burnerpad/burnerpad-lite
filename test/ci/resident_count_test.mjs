@@ -3,10 +3,12 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const parser = fileURLToPath(new URL("../../ops/extract-resident-count.mjs", import.meta.url));
+const deployTasks = fileURLToPath(new URL("../../ops/roles/deploy/tasks/main.yml", import.meta.url));
 
 const run = (input) =>
   spawnSync(process.execPath, [parser], {
@@ -37,6 +39,15 @@ test("accepts the current resident counter", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "7\n");
   assert.equal(result.stderr, "");
+});
+
+test("deployment probes stats through the BusyBox applet present in the release image", () => {
+  const source = readFileSync(deployTasks, "utf8");
+  const probes = [...source.matchAll(
+    /^\s+(.+?) -qO- http:\/\/127\.0\.0\.1:4000\/api\/stats$/gm
+  )].map((match) => match[1]);
+
+  assert.deepEqual(probes, ["/bin/busybox wget", "/bin/busybox wget"]);
 });
 
 for (const [label, input] of [
