@@ -56,7 +56,7 @@ jobs:
           upload-release-assets: false
       - name: Attach the source SBOM attestation
         id: source-attestation
-        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/source-release/burnerpad-lite-source-${{ github.event.workflow_run.head_sha }}.tar.gz
           sbom-path: ${{ runner.temp }}/source-release/burnerpad-lite-source-${{ github.event.workflow_run.head_sha }}.spdx.json
@@ -179,7 +179,7 @@ jobs:
             result: "passed"
           }' > "$PREDICATE_PATH"
       - name: Attach the passed vulnerability-scan attestation
-        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.identity.outputs.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -187,7 +187,7 @@ jobs:
           predicate-path: ${{ runner.temp }}/trivy-scan-predicate.json
           push-to-registry: true
       - name: Attach GitHub build-provenance attestation
-        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.identity.outputs.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
