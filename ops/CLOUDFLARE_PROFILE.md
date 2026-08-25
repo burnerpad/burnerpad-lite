@@ -27,25 +27,38 @@ each change (exports can contain account identifiers and do not belong in this p
 
 ## Required rate-limit rules
 
-The source of truth is [`cloudflare/rate-limit-policy.json`](cloudflare/rate-limit-policy.json). Create both
-enabled zone-level rules in the `http_ratelimit` phase, substitute the production hostname for `{{host}}`,
-and preserve every field exactly:
+The supported production profile targets **Cloudflare Free**. Cloudflare permits one Free-plan rate-limit
+rule, path-only matching, per-IP counting, and a 10-second counting and mitigation period. The source of
+truth is [`cloudflare/rate-limit-policy.json`](cloudflare/rate-limit-policy.json). Provision its one enabled
+zone-level rule in the `http_ratelimit` phase and preserve every committed field exactly:
 
 | Rule ref | Protected traffic | Per-colocation, per-source threshold | Action |
 |---|---|---:|---|
-| `burnerpad_health_readiness_v1` | GET/HEAD `/healthz` and `/readyz` | 120 requests per 60 seconds | Block for 60 seconds with 429 |
-| `burnerpad_static_v1` | GET/HEAD `/crypto/*` and `/fonts/*` | 600 requests per 60 seconds | Block for 120 seconds with 429 |
+| `burnerpad_public_edge_free_v1` | `/healthz`, `/readyz`, `/crypto/*`, and `/fonts/*` | 100 requests per 10 seconds | Block for 10 seconds |
 
-Both rules include `cf.colo.id` and `ip.src` as characteristics and set `requests_to_origin: false`.
-Consequently, randomized query strings and cached responses still consume the static allowance. Do not add
-IP, user-agent, query, header, verified-bot, or monitoring bypasses: those are difficult to authenticate and
-can silently restore an unmetered route.
+The one shared allowance is a deliberate Free-plan compromise. It retains the prior static-asset burst
+allowance while preventing an unbounded health or cache-busting route. The rule is zone-scoped because the
+Free plan does not make Host or Method available in a rate-limit expression. It includes Cloudflare's
+mandatory `cf.colo.id` plus `ip.src`, and sets `requests_to_origin: false`, so cached responses and randomized
+query strings consume the allowance. It relies on Cloudflare's default block response because custom block
+responses are not part of the Free contract.
 
-Monitoring uses the ordinary allowance explicitly. UptimeRobot contributes one health request every five
-minutes. A healthy scheduled or post-deploy canary needs only a few requests; even its complete 15-second
-readiness retry remains below the 120-request health allowance. Docker probes call the app over loopback and
-never traverse Cloudflare. A 429 is an availability failure for the public canary and must alert; monitors
+Cloudflare currently accepts the explicit `requests_to_origin: false` creation value but omits that field
+from the returned Free-plan rule. Because Free does not permit cache exclusion, the audit treats only that
+specific omission as the required false value. An explicit `true` or any other missing/different committed
+field still fails the deployment audit.
+
+Do not add IP, user-agent, query, header, verified-bot, or monitoring bypasses: those are difficult to
+authenticate and can silently restore an unmetered route. Monitoring uses the ordinary allowance.
+UptimeRobot contributes one health request every five minutes, while a healthy scheduled or post-deploy
+canary needs only a few requests. Docker probes call the app over loopback and never traverse Cloudflare. A
+Cloudflare rate-limit response is an availability failure for the public canary and must alert; monitors
 must not treat it as healthy.
+
+Do not create the rule manually in the dashboard. The committed audit requires a stable custom `ref`, and
+the one-time provisioning command in [`../DEPLOYMENT.md`](../DEPLOYMENT.md) creates that exact API object.
+It refuses to overwrite an existing entry point. Provision with a temporary one-zone write token, revoke
+that token immediately, and retain only the separate read-only audit token for routine deployments.
 
 Create a separate read-only Cloudflare API token scoped to Rulesets for this zone. Store it and the zone ID
 only in the gitignored Ansible secrets file. Every deployment runs this control-plane audit before replacing
@@ -54,13 +67,12 @@ the app:
 ```bash
 CLOUDFLARE_ZONE_ID=... \
 CLOUDFLARE_RULESETS_READ_TOKEN=... \
-BURNERPAD_BASE_URL=https://burnerpad.io \
 node ops/cloudflare/audit-rate-limit-policy.mjs
 ```
 
-The audit reads the current `http_ratelimit` entry point and rejects a removed/duplicated/disabled rule,
-any expression or bypass change, a higher request threshold, a shorter block, origin-only counting, or a
-different action. It never prints the token, zone ID, source addresses, or the API response body.
+The audit reads the current `http_ratelimit` entry point and rejects an extra, removed, duplicated, or
+disabled rule; any expression or bypass change; a higher request threshold; a shorter block; origin-only
+counting; or a different action. It never prints the token, zone ID, source addresses, or API response body.
 
 The edge contract reads Cloudflare's managed `/cdn-cgi/trace` observation into memory, submits it to the
 match-only `/api/edge/source-check`, and repeats with a forged `CF-Connecting-IP`. Only status codes are
