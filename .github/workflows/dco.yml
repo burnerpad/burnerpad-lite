@@ -6,11 +6,14 @@ on:
 # Verifies every non-merge commit in the PR carries a Signed-off-by trailer (DCO 1.1) whose email
 # matches the commit author or committer. Pure bash + the official checkout action — no third-party
 # action in the trust path. See CONTRIBUTING.md / DCO.
+permissions:
+  contents: read
+
 jobs:
   dco:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
       - name: Check Signed-off-by on every commit

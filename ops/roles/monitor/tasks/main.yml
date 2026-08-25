@@ -1,0 +1,62 @@
+---
+- name: Install the diagnostic sampler + heartbeat
+  no_log: true
+  diff: false
+  ansible.builtin.template:
+    src: bp-diag.sh.j2
+    dest: /usr/local/bin/bp-diag.sh
+    owner: root
+    group: root
+    # The rendered heartbeat URL is a bearer-like secret: only root may read or execute this file.
+    mode: "0700"
+
+- name: Create the non-secret monitor state directory
+  ansible.builtin.file:
+    path: /var/lib/burnerpad-monitor
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install the label-scoped verified-image retention helper
+  ansible.builtin.template:
+    src: bp-prune-images.sh.j2
+    dest: /usr/local/bin/bp-prune-images.sh
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Prune old stopped Burnerpad images while retaining verified rollback releases
+  ansible.builtin.command: /usr/local/bin/bp-prune-images.sh
+  changed_when: false
+
+- name: Schedule it (hourly)
+  ansible.builtin.cron:
+    name: bp-diag
+    minute: "7"
+    job: "/usr/local/bin/bp-diag.sh"
+
+- name: Create the capability-free hourly operational-metrics log with private permissions
+  ansible.builtin.copy:
+    dest: /var/log/bp-diag.log
+    content: ""
+    force: false
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Retain approximately twelve months of capability-free hourly operational metrics
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/bp-diag
+    content: |
+      /var/log/bp-diag.log {
+        weekly
+        rotate 52
+        maxage 365
+        compress
+        delaycompress
+        missingok
+        notifempty
+        create 0600 root root
+      }
+    mode: "0644"

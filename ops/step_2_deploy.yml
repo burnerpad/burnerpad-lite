@@ -1,0 +1,54 @@
+---
+# STEP 2 — run for the first deploy and EVERY routine application release, over Tailscale:
+#     cd ops
+#     ansible-playbook step_2_deploy.yml
+#
+# Verifies and deploys the exact public GHCR artifacts produced for a clean git revision. It intentionally
+# does not repeat host setup or OS/SSH hardening.
+- name: Step 2 - deploy or redeploy Burnerpad
+  hosts: burnerpad
+  become: true
+  pre_tasks:
+    - name: Read release revision from the local full git SHA
+      delegate_to: localhost
+      become: false
+      ansible.builtin.command: git -C "{{ playbook_dir }}/.." rev-parse HEAD
+      register: _sha
+      changed_when: false
+
+    - name: Refuse to deploy a dirty working tree
+      delegate_to: localhost
+      become: false
+      ansible.builtin.command: git -C "{{ playbook_dir }}/.." status --porcelain
+      register: _dirty
+      changed_when: false
+      failed_when: _dirty.stdout | length > 0
+
+    - name: Use the full git SHA as the image and release revision
+      ansible.builtin.set_fact:
+        image_tag: "{{ _sha.stdout }}"
+
+    - name: Refuse to deploy without production credentials and heartbeat
+      ansible.builtin.assert:
+        that:
+          - cloudflare_tunnel_token | default('') | length > 20
+          - (cloudflare_tunnel_token | default('')) != 'CHANGE_ME'
+          - cloudflare_zone_id | default('') is match('^[0-9a-f]{32}$')
+          - cloudflare_rulesets_read_token | default('') | length > 20
+          - (cloudflare_rulesets_read_token | default('')) != 'CHANGE_ME'
+          - heartbeat_url | default('') is match('^https://[^/]+/.+')
+          - operator_name != 'CHANGE_ME_LEGAL_OPERATOR'
+          - not abuse_email.endswith('.invalid')
+          - jurisdiction != 'CHANGE_ME_JURISDICTION'
+          - not security_email.endswith('.invalid')
+          - security_policy_url is match('^https://')
+          - public_origin is match('^https://[^/]+$')
+          - "'CHANGE-ME' not in public_origin"
+        fail_msg: >
+          Set replacement Cloudflare tunnel and read-only Rulesets credentials, the zone ID, and an HTTPS
+          heartbeat_url in the gitignored group_vars/all/secrets.yml, plus real
+          operator/security/public-origin values in vars.yml.
+      no_log: true
+  roles:
+    - deploy
+    - monitor

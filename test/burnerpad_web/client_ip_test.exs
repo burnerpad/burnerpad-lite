@@ -25,7 +25,7 @@ defmodule BurnerpadWeb.ClientIPTest do
 
   describe "with no trusted proxy (TRUSTED_PROXIES empty — the default, most trustworthy setup)" do
     setup do
-      put_config(:trusted_proxies, "")
+      put_config(:trusted_proxies, [])
       :ok
     end
 
@@ -57,7 +57,7 @@ defmodule BurnerpadWeb.ClientIPTest do
 
   describe "behind a configured trusted proxy (TRUSTED_PROXIES=\"10.0.0.0/8\")" do
     setup do
-      put_config(:trusted_proxies, "10.0.0.0/8")
+      put_config(:trusted_proxies, Config.parse_proxy_cidrs!("10.0.0.0/8"))
       :ok
     end
 
@@ -81,5 +81,47 @@ defmodule BurnerpadWeb.ClientIPTest do
     test "a forwarded IPv6 client is keyed to its /64" do
       assert key({10, 0, 0, 1}, "2001:db8:1:2:3:4:5:6") == "2001:db8:1:2::/64"
     end
+
+    test "falls back to the peer when the forwarded header is duplicated" do
+      header = Config.real_ip_header()
+
+      conn = %{
+        conn(:get, "/")
+        | remote_ip: {10, 1, 2, 3},
+          req_headers: [{header, "203.0.113.7"}, {header, "198.51.100.4"}]
+      }
+
+      assert ClientIP.get(conn) == "10.1.2.3"
+    end
+  end
+
+  test "an IPv4-mapped IPv6 peer gets its IPv4 /32 key" do
+    put_config(:trusted_proxies, [])
+    assert key({0, 0, 0, 0, 0, 0xFFFF, 0xCB00, 0x7107}) == "203.0.113.7"
+  end
+
+  test "compare checks an expected address without exposing the resolved source key" do
+    put_config(:trusted_proxies, Config.parse_proxy_cidrs!("10.0.0.0/8"))
+
+    conn =
+      %{conn(:post, "/api/edge/source-check") | remote_ip: {10, 1, 2, 3}}
+      |> put_req_header(Config.real_ip_header(), "203.0.113.7")
+
+    assert ClientIP.compare(conn, "203.0.113.7") == :match
+    assert ClientIP.compare(conn, "203.0.113.8") == :mismatch
+    assert ClientIP.compare(conn, "not-an-ip") == :invalid
+    assert ClientIP.compare(conn, String.duplicate("1", 65)) == :invalid
+    assert ClientIP.compare(conn, <<0xFF>>) == :invalid
+  end
+
+  test "compare applies the same IPv6 /64 aggregation as abuse keying" do
+    put_config(:trusted_proxies, Config.parse_proxy_cidrs!("10.0.0.0/8"))
+
+    conn =
+      %{conn(:post, "/api/edge/source-check") | remote_ip: {10, 1, 2, 3}}
+      |> put_req_header(Config.real_ip_header(), "2001:db8:1:2:3:4:5:6")
+
+    assert ClientIP.compare(conn, "2001:db8:1:2:ffff:ffff:ffff:ffff") == :match
+    assert ClientIP.compare(conn, "2001:db8:1:3::1") == :mismatch
   end
 end

@@ -1,0 +1,15 @@
+.git
+.github
+_build
+deps
+cover
+doc
+tmp
+ops
+test
+docs
+*.md
+.env
+.env.*
+!.env.example
+erl_crash.dump

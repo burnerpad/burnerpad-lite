@@ -8,3 +8,18 @@ erl_crash.dump
 *.beam
 /tmp/
 burnerpad-*.tar
+
+# ── secrets — NEVER commit (templates end in .example and are allowed) ──────────
+.env
+.env.*
+!.env.example
+/ops/inventory.ini
+/ops/group_vars/**/secrets.yml
+/ops/.collections/
+/ops/.roles/
+/ops/.galaxy-install.*/
+/ops/.vault_pass
+*.pem
+*.key
+id_rsa*
+id_ed25519*

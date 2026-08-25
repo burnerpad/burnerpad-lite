@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Impulsa SLU
+
+# Overlay for the VPS capacity profiles. Each profile reserves 25% of total RAM for the OS, Docker,
+# cloudflared, and monitoring, then constrains the app to the remaining 75%. The workload reaches Store
+# capacity through the public API.
+services:
+  app:
+    mem_limit: "${LOAD_APP_MEMORY_LIMIT:-6g}"
+    memswap_limit: "${LOAD_APP_MEMORY_LIMIT:-6g}"
+    cpus: "${LOAD_CPUS:-4.0}"
+    environment:
+      MAX_SECRETS: "${LOAD_MAX_SECRETS:-50000}"
+      RATE_LIMIT: "100000"
+      BAN_THRESHOLD: "150000"
+      GLOBAL_CREATE_CEILING: "100000"
+      GLOBAL_CEILING: "200000"
+      PER_IP_BUDGET: "${LOAD_PER_IP_BUDGET:-13107200}"
+      PER_IP_ROW_BUDGET: "${LOAD_PER_IP_ROW_BUDGET:-200}"

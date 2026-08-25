@@ -1,0 +1,27 @@
+name: quarterly-recovery-drill
+
+on:
+  schedule:
+    - cron: '23 8 1 1,4,7,10 *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  open-drill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open one quarterly operator-owned recovery drill
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          quarter="$(date -u +%Y)-Q$(( ($(date -u +%-m)-1)/3 + 1 ))"
+          title="Recovery drill: $quarter"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 200 --json title \
+            --jq "map(select(.title == \"$title\")) | length")
+          if [ "$existing" -eq 0 ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+              --body "Run the throwaway-VPS drill in docs/RECOVERY.md. Record timestamps, verified digests, alert evidence, RTO, teardown, and follow-ups. Never paste credentials or capability material."
+          fi

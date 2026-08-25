@@ -5,27 +5,260 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege: the default GITHUB_TOKEN only needs to read the repo (M10).
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # Actions are pinned by commit SHA, not a movable tag (M10). The comment keeps the human-readable ref.
       # The crypto bundle is the crypto-js submodule. `submodules: recursive` fetches it with the
       # repo-scoped GITHUB_TOKEN — which works once crypto-js is PUBLIC. While it is private, supply a
       # token with read access here (e.g. `token: ${{ secrets.CRYPTO_JS_PAT }}`) or a deploy key.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
-      - uses: erlef/setup-beam@v1
+          fetch-depth: 0
+          persist-credentials: false
+      - run: .github/scripts/check-toolchain-pins.sh
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
         with:
-          otp-version: '27'
-          elixir-version: '1.18'
-      - uses: actions/setup-node@v4
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '20'
+          node-version-file: .tool-versions
+          package-manager-cache: false
       - run: mix deps.get
+      - run: mix format --check-formatted
+      - run: mix deps.unlock --check-unused
+      - run: git diff --check
+      - run: ops/check-security-claims.sh
+      # Fail the build on any dependency advisory (M9) — a vulnerable lock never reaches main.
+      - run: mix hex.audit
       - run: mix compile --warnings-as-errors
+      # Config has prod-only compile branches; compile that environment too so release-only warnings fail CI.
+      - run: MIX_ENV=prod mix compile --warnings-as-errors
       - run: mix test
-      # Re-run the vendored bundle's own conformance suite, so a bad submodule pin fails CI.
+      # Run the nested repository's exact complete gate, not a parent-maintained subset.
       - run: mix test.crypto
       # Unit-test the page driver's DOM-free Core (display / canonicalization / paste-cap / strength).
       - run: mix test.core
+      # Unit-test privacy-safe canary reporting plus Cloudflare trace/source-spoof verification.
+      - run: mix test.edge
+      - name: Tests and generators must leave a clean repository
+        run: bash .github/scripts/check-clean-tree.sh
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .tool-versions
+          package-manager-cache: false
+      - run: mix deps.get
+      - run: npm ci
+        working-directory: test/browser
+      - run: npm audit --audit-level=high
+        working-directory: test/browser
+      - name: Run real-browser matrix in the pinned Playwright image
+        run: |
+          set -euo pipefail
+          server_log="$RUNNER_TEMP/burnerpad-browser-server.log"
+          PORT=4014 RATE_LIMIT=100000 BAN_THRESHOLD=500000 GLOBAL_CEILING=1000000 \
+            MAX_SECRETS=100000 mix run --no-halt >"$server_log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4014/readyz >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            sed -n '1,200p' "$server_log" >&2
+            exit 1
+          fi
+
+          if ! docker run --init --rm --network host --ipc=host \
+            -e CI=1 \
+            -e BROWSER_TEST_EXTERNAL_SERVER=1 \
+            -e BROWSER_TEST_BASE_URL=http://127.0.0.1:4014 \
+            -e PLAYWRIGHT_OUTPUT_DIR=/tmp/test-results \
+            -v "$PWD:/repo:ro" -w /repo/test/browser \
+            mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e \
+            npm test; then
+            curl -fsS http://127.0.0.1:4014/readyz >/dev/null \
+              || echo "Browser-test server is no longer ready" >&2
+            sed -n '1,240p' "$server_log" >&2
+            exit 1
+          fi
+      - name: Browser tests must leave a clean repository
+        run: bash .github/scripts/check-clean-tree.sh
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch complete nested-repository history
+        run: |
+          git -C priv/static/vendor/crypto-js fetch --tags --force
+          if git -C priv/static/vendor/crypto-js rev-parse --is-shallow-repository | grep -qx true; then
+            git -C priv/static/vendor/crypto-js fetch --unshallow
+          fi
+      - name: Reject credentials committed anywhere in history
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" \
+            ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb \
+            git /repo --no-banner --redact
+          docker run --rm -v "$PWD:/repo:ro" \
+            ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb \
+            git /repo/priv/static/vendor/crypto-js --no-banner --redact
+      - run: docker build --check .
+      - run: docker build --build-arg BURNERPAD_REVISION="$GITHUB_SHA" -t burnerpad:ci .
+      - run: docker build --check -f ops/cloudflared.Dockerfile .
+      - run: docker build -f ops/cloudflared.Dockerfile -t burnerpad-cloudflared:ci .
+      - name: Public image contains no release cookie
+        run: docker run --rm --entrypoint sh burnerpad:ci -c 'test ! -e releases/COOKIE'
+      - name: Release refuses a weak runtime cookie
+        run: |
+          if output=$(docker run --rm -e RELEASE_COOKIE=short burnerpad:ci 2>&1); then
+            echo "::error::production release accepted a weak Erlang cookie"
+            exit 1
+          fi
+          test "$output" = 'RELEASE_COOKIE must be at least 64 alphanumeric characters'
+      - name: Install the pinned production-Compose test runtime
+        run: python3 -m pip install --disable-pip-version-check ansible-core==2.21.3
+      - name: Production runtime enforces container and BEAM hardening
+        run: test/ci/production_runtime_hardening_test.sh burnerpad:ci burnerpad-cloudflared:ci
+      - name: Production image create/reveal/decrypt transaction
+        run: |
+          docker run -d --name burnerpad-ci -p 127.0.0.1:4015:4000 \
+            -e RELEASE_COOKIE=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \
+            -e OPERATOR_NAME='CI operator' -e ABUSE_EMAIL=ci@example.com \
+            -e JURISDICTION=CI -e SECURITY_EMAIL=security@example.com \
+            -e SECURITY_POLICY_URL=https://example.com/security \
+            -e BURNERPAD_REVISION="$GITHUB_SHA" \
+            -e BURNERPAD_IMAGE_DIGEST=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            burnerpad:ci
+          trap 'docker rm -f burnerpad-ci >/dev/null 2>&1 || true' EXIT
+          BURNERPAD_BASE_URL=http://127.0.0.1:4015 \
+            BURNERPAD_EXPECTED_REVISION="$GITHUB_SHA" node ops/smoke/e2e-canary.mjs
+      - name: Reject high/critical app-image vulnerabilities
+        run: >-
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+          aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+          image --scanners vuln --severity HIGH,CRITICAL --exit-code 1
+          --skip-version-check burnerpad:ci
+      - name: Reject high/critical tunnel-image vulnerabilities
+        run: >-
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+          aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+          image --scanners vuln --severity HIGH,CRITICAL --exit-code 1
+          --skip-version-check burnerpad-cloudflared:ci
+
+  ops:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .tool-versions
+          package-manager-cache: false
+      - name: Install the pinned Ansible syntax-check runtime
+        run: python3 -m pip install --disable-pip-version-check ansible-core==2.21.3
+      - name: Verify and install pinned Galaxy inputs
+        working-directory: ops
+        run: ./install-requirements-locked.sh
+      - name: Syntax-check every production playbook
+        working-directory: ops
+        run: |
+          cp inventory.example.ini inventory.ini
+          ansible-playbook --syntax-check step_1_setup.yml
+          ansible-playbook --syntax-check step_2_deploy.yml
+          ansible-playbook --syntax-check step_3_compliance.yml
+          ansible localhost -i localhost, -c local -m ansible.builtin.template \
+            -a "src=roles/monitor/templates/bp-diag.sh.j2 dest=$RUNNER_TEMP/bp-diag.sh mode=0700" \
+            -e @group_vars/all/vars.yml -e heartbeat_url='https://example.com/ping'
+          ansible localhost -i localhost, -c local -m ansible.builtin.template \
+            -a "src=roles/monitor/templates/bp-prune-images.sh.j2 dest=$RUNNER_TEMP/bp-prune-images.sh mode=0700" \
+            -e @group_vars/all/vars.yml
+          ansible localhost -i localhost, -c local -m ansible.builtin.template \
+            -a "src=roles/deploy/templates/docker-compose.yml.j2 dest=$RUNNER_TEMP/docker-compose.yml mode=0600" \
+            -e @group_vars/all/vars.yml
+          bash -n "$RUNNER_TEMP/bp-diag.sh"
+          bash -n "$RUNNER_TEMP/bp-prune-images.sh"
+          APP_IMAGE=alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+          CLOUDFLARED_IMAGE=alpine@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+          RELEASE_COOKIE=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \
+          TUNNEL_TOKEN=dummy OPERATOR_NAME=operator ABUSE_EMAIL=abuse@example.com \
+          JURISDICTION=review SECURITY_EMAIL=security@example.com \
+          SECURITY_POLICY_URL=https://example.com/security \
+          BURNERPAD_IMAGE_DIGEST=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+          MAX_SECRETS=10000 GLOBAL_CREATE_CEILING=1000 PER_IP_BUDGET=13107200 \
+          PER_IP_ROW_BUDGET=200 docker compose -f "$RUNNER_TEMP/docker-compose.yml" config --quiet
+      - name: Validate public smoke scripts parse
+        run: |
+          node --check ops/smoke/canary-report.mjs
+          node --check ops/smoke/edge-cache-contract.mjs
+          node --check ops/smoke/edge-contract.mjs
+          node --check ops/smoke/e2e-canary.mjs
+          node --check ops/cloudflare/audit-rate-limit-policy.mjs
+          node --check test/load/maximum_state.mjs
+      - name: Test immutable release-image approval policy
+        run: node test/ci/release_image_gate_test.mjs
+      - name: Lint every parent and nested GitHub Actions workflow
+        run: |
+          docker run --rm --entrypoint sh -v "$PWD:/repo:ro" -w /repo \
+            rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -c 'actionlint -color=false -shellcheck= .github/workflows/*.yml'
+          docker run --rm --entrypoint sh -v "$PWD:/repo:ro" -w /repo/priv/static/vendor/crypto-js \
+            rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -c 'actionlint -color=false -shellcheck= .github/workflows/*.yml'
+      - name: Lint committed operator shell scripts
+        run: >-
+          docker run --rm -v "$PWD:/repo:ro" -v "$RUNNER_TEMP:/rendered:ro" -w /repo
+          koalaman/shellcheck-alpine:v0.11.0@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
+          shellcheck .githooks/pre-commit .github/scripts/check-toolchain-pins.sh
+          .github/scripts/check-clean-tree.sh
+          .github/scripts/package-source.sh
+          .github/scripts/reconcile-durable-issue.sh
+          ops/check-security-claims.sh ops/install-requirements-locked.sh
+          test/ci/production_runtime_hardening_test.sh
+          test/ci/clean_tree_test.sh
+          test/load/run_capacity_profile.sh test/load/run_capacity_matrix.sh
+          test/ci/compose_project_identity_test.sh test/ci/install_requirements_locked_test.sh
+          test/ci/reconcile_durable_issue_test.sh
+          test/ci/source_release_test.sh
+          /rendered/bp-diag.sh /rendered/bp-prune-images.sh
+      - name: Test checksum-locked Galaxy installation
+        run: test/ci/install_requirements_locked_test.sh
+      - name: Test stable Compose project identity
+        run: test/ci/compose_project_identity_test.sh
+      - name: Test source release packaging
+        run: test/ci/source_release_test.sh
+      - name: Test strict clean-tree detection
+        run: bash test/ci/clean_tree_test.sh
+      - name: Test durable-issue reconciliation
+        run: test/ci/reconcile_durable_issue_test.sh

@@ -1,0 +1,89 @@
+---
+# STEP 1 — run ONCE for a fresh VPS:
+#     cd ops
+#     ansible-playbook step_1_setup.yml
+#
+# Play 1 bootstraps through the public-IP inventory host. Play 2 then reconnects through the Tailscale
+# inventory host and hardens only after that path works. If the tailnet path fails, Ansible stops before
+# disabling root/password SSH, so the transition remains lockout-safe without a manual pause. Because
+# this playbook is exclusively for a fresh/rebuilt VPS, its local preflight forgets the two replaced
+# host identities before SSH pins their new keys. Routine deployments never alter known_hosts.
+- name: Step 1 preflight - forget SSH keys for the explicitly replaced host
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  tasks:
+    - name: Require exactly one bootstrap host and one tailnet host
+      ansible.builtin.assert:
+        that:
+          - groups['bootstrap'] | default([]) | length == 1
+          - groups['burnerpad'] | default([]) | length == 1
+        fail_msg: >
+          Fresh-host setup requires exactly one inventory host in each of the bootstrap and burnerpad
+          groups so that SSH host-key removal cannot target an ambiguous set of machines.
+
+    - name: Forget the replaced public-IP and Tailscale SSH host keys
+      ansible.builtin.known_hosts:
+        path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ssh/known_hosts"
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ hostvars[groups['bootstrap'][0]].ansible_host | default(groups['bootstrap'][0]) }}"
+        - "{{ hostvars[groups['burnerpad'][0]].ansible_host | default(groups['burnerpad'][0]) }}"
+      loop_control:
+        label: "{{ item }}"
+
+- name: Step 1a - bootstrap safe access and host prerequisites over the public IP
+  hosts: bootstrap
+  become: true
+  vars_prompt:
+    - name: bootstrap_root_password
+      prompt: Fresh VPS root password
+      private: true
+  vars:
+    # Scope the public-host password to this play; it never follows Ansible onto the tailnet connection.
+    ansible_password: "{{ bootstrap_root_password }}"
+  pre_tasks:
+    - name: Refuse to bootstrap with a missing or placeholder Tailscale auth key
+      ansible.builtin.assert:
+        that:
+          - tailscale_auth_key | default('') is match('^tskey-auth-.{10,}$')
+          - (tailscale_auth_key | default('')) != 'tskey-auth-CHANGE_ME'
+        fail_msg: >
+          Set a fresh tagged Tailscale auth key in the gitignored group_vars/all/secrets.yml before
+          setting up the host.
+      no_log: true
+  roles:
+    - provision
+    - role: geerlingguy.docker
+      vars:
+        docker_users: ["{{ deploy_user }}"]
+
+- name: Step 1b - reconnect over Tailscale and harden the host
+  hosts: burnerpad
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Wait for the new Tailscale administration path
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 10
+        sleep: 2
+        timeout: 120
+
+    - name: Gather facts over the proven Tailscale path
+      ansible.builtin.setup:
+
+    - name: Refuse to harden a host without an active Tailscale interface
+      ansible.builtin.command: ip link show tailscale0
+      changed_when: false
+  roles:
+    - devsec.hardening.os_hardening
+    - devsec.hardening.ssh_hardening
+    - harden
+  post_tasks:
+    - name: Show the next step
+      ansible.builtin.debug:
+        msg: "Host setup complete. Deploy Burnerpad with: ansible-playbook step_2_deploy.yml"

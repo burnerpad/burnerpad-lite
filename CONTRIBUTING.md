@@ -38,10 +38,13 @@ git add priv/static/vendor/crypto-js && git commit -s -m "bump @burnerpad/crypto
 
 ## Sign your work — the DCO
 
-Add a `Signed-off-by` trailer with your real name and a reachable email (`git commit -s` does it for you):
+Add a `Signed-off-by` trailer with your real name and an email associated with your Git identity (`git
+commit -s` does it for you):
 
 ```
 Signed-off-by: Jane Developer <jane@example.com>
 ```
 
-A DCO check runs on every pull request; unsigned commits block the merge.
+A GitHub-provided `users.noreply.github.com` address associated with the contributor's account is explicitly
+accepted so contributing does not require publishing a private contact address. A DCO check runs on every
+pull request; unsigned commits or a trailer that does not match the commit author block the merge.

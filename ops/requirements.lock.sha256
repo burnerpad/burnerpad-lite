@@ -1,0 +1,9 @@
+6c512dc728612a53ef0a535b5ef09c619cf3a1a57e8ba8987699f537dbe1a6b3  ansible-mysql-5.2.0.tar.gz
+00a58c5d804c9adc99c3c3dc1b9f2246f4bb5f7337941440e0956f0e31c3b82b  ansible-posix-2.2.2.tar.gz
+b17e3fe14fb934a38213204d8fe70c52fd63aabf6ea8ffd56e8fbaef70b69f18  community-crypto-3.3.0.tar.gz
+96f30eea08f719918bb223a3777271bf82ef72076eef204a4986dfcea94ce3f7  community-docker-5.2.2.tar.gz
+46506254911a675da601abe0adce1bc5d00886ec9c6edb71e930244db7ed9f4d  community-general-13.3.0.tar.gz
+cbb9e86c5b1720df21e940cedcd2f3e1226c38262623e090a883712610733851  community-library_inventory_filtering_v1-1.1.5.tar.gz
+5ef7ef0749d708215e333aff9b0c93489519f0126ef34679f95dd7bd0ec15960  community-mysql-5.0.2.tar.gz
+5adf0453b98002853fd5255879408a17d91b80073485e2e8355a3360d7b53f99  devsec-hardening-10.6.0.tar.gz
+0d2394cb8dafbe379f1f9643d572b1fa13f126c36b39d8db2998dcd672716840  geerlingguy.docker-8.0.0.tar.gz

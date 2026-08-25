@@ -361,7 +361,7 @@ button.danger .ico { width: 0.9rem; height: 0.9rem; }
 .codeblock-fade { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; background: var(--card2); -webkit-mask-image: linear-gradient(to top, #000, transparent); mask-image: linear-gradient(to top, #000, transparent); pointer-events: none; opacity: 0; transition: opacity 0.15s ease; }
 
 .page-title { margin: 0 0 4px; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 0; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 0 0 38px; }
 .stat { background: var(--card); border: 1px solid var(--border); border-radius: 13px; padding: 16px; }
 .stat .num { display: block; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 25px; font-weight: 500; letter-spacing: -0.01em; color: var(--text); }
 .stat .lbl { display: block; color: var(--muted); font-size: 12.5px; margin-top: 5px; }
@@ -372,9 +372,30 @@ button.danger .ico { width: 0.9rem; height: 0.9rem; }
 .stat .num.c-muted { color: var(--muted); }
 .stat .num.c-warn { color: var(--warn); }
 .stat .num.c-danger { color: var(--danger); }
-.stats-meta { margin-top: 14px; padding: 14px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 13px; display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }
+.stats-meta { margin-top: 20px; padding: 2px 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; font-size: 13px; color: var(--muted); text-align: center; }
 .stats-meta .mono { color: var(--text); }
 .stats-meta a { color: var(--accent-text); }
+.stats-section-title { margin: 0 0 4px; }
+.activity-chart { margin-top: 0; padding: 14px 16px 10px; background: var(--card); border: 1px solid var(--border); border-radius: 13px; }
+.activity-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; color: var(--muted); font-size: 12px; }
+.activity-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-swatch { width: 9px; height: 9px; border-radius: 2px; }
+.chart-swatch-visits { background: var(--accent); }
+.chart-swatch-created { background: var(--good); }
+.activity-plot { display: block; width: 100%; max-width: 520px; height: auto; margin: 2px auto 0; overflow: visible; }
+.chart-grid { stroke: var(--border); stroke-width: 0.75; }
+.chart-axis { stroke: var(--muted); stroke-width: 0.75; }
+.chart-axis-label, .chart-date { fill: var(--muted); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 8px; }
+.chart-bar { shape-rendering: geometricPrecision; }
+.chart-bar-visits { fill: var(--accent); }
+.chart-bar-created { fill: var(--good); }
+.sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
+
+@media (max-width: 430px) {
+  .stats-meta { justify-content: flex-start; text-align: left; }
+  .activity-chart { padding-right: 12px; padding-left: 12px; }
+  .activity-legend { justify-content: flex-start; column-gap: 14px; }
+}
 
 /* ── footer (shared layout) ── */
 .footer { max-width: 42rem; margin: 2.25rem auto 0; padding: 1.25rem 1.25rem 2rem; color: var(--muted); font-size: 13px; text-align: center; }

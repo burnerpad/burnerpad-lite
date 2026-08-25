@@ -1,0 +1,59 @@
+name: public-canary
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: public-canary
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .tool-versions
+          package-manager-cache: false
+      - name: Verify the public edge contract
+        id: edge
+        env:
+          BURNERPAD_BASE_URL: ${{ vars.BURNERPAD_PUBLIC_ORIGIN || 'https://burnerpad.io' }}
+          BURNERPAD_EXPECTED_REVISION: ${{ vars.BURNERPAD_PRODUCTION_REVISION }}
+          BURNERPAD_REQUIRE_EXPECTED_REVISION: 'true'
+        run: node ops/smoke/edge-contract.mjs
+      - name: Public create, reveal, decrypt, compare, and second-reveal check
+        id: transaction
+        if: ${{ always() }}
+        env:
+          BURNERPAD_BASE_URL: ${{ vars.BURNERPAD_PUBLIC_ORIGIN || 'https://burnerpad.io' }}
+          BURNERPAD_EXPECTED_REVISION: ${{ vars.BURNERPAD_PRODUCTION_REVISION }}
+          BURNERPAD_REQUIRE_EXPECTED_REVISION: 'true'
+        run: node ops/smoke/e2e-canary.mjs
+      - name: Reconcile the durable canary incident
+        if: ${{ always() && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INCIDENT_STATUS: ${{ job.status }}
+          INCIDENT_TITLE: Public end-to-end canary failed
+          INCIDENT_FAILURE_BODY: |
+            The privacy-safe public canary failed.
+
+            Edge check: stage=${{ steps.edge.outputs.stage || 'not_run' }}, release=${{ steps.edge.outputs.release || 'unavailable' }}, source=${{ steps.edge.outputs.release_source || 'unavailable' }}
+            Transaction check: stage=${{ steps.transaction.outputs.stage || 'not_run' }}, release=${{ steps.transaction.outputs.release || 'unavailable' }}, source=${{ steps.transaction.outputs.release_source || 'unavailable' }}
+            Expected release: ${{ steps.transaction.outputs.expected_release || steps.edge.outputs.expected_release || 'unavailable' }}
+
+            No capability material or error detail was logged. Review:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          INCIDENT_RECOVERY_COMMENT: The public end-to-end canary is green again.
+        run: .github/scripts/reconcile-durable-issue.sh

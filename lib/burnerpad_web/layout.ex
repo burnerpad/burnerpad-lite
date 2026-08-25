@@ -44,7 +44,7 @@ defmodule BurnerpadWeb.Layout do
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="referrer" content="no-referrer" />#{refresh}
         <title>#{escape(title)}</title>
-        <link rel="stylesheet" href="/crypto/crypto.css" />
+        <link rel="stylesheet" href="/crypto/crypto.css" integrity="#{CryptoAssets.css_sri()}" crossorigin="anonymous" />
         <!-- Render-blocking in <head> (no defer): stamps data-theme from localStorage BEFORE paint, so a
              saved light/dark choice applies with no flash. External + SRI-pinned ⇒ strict CSP, no inline. -->
         <script src="/crypto/theme.js" integrity="#{CryptoAssets.theme_sri()}" crossorigin="anonymous"></script>

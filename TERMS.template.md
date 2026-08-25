@@ -21,10 +21,11 @@
 ## 1. What this is
 
 A free, no-accounts, end-to-end-encrypted one-time secret sharing service operated by
-**[operator name]**. Your secret is encrypted in your browser; we store only opaque ciphertext. The
-decryption key never reaches our server — it stays in your browser and is rebuilt from a passphrase you
-share on a separate channel, and the link itself carries no key. We therefore **cannot read, decrypt,
-scan, verify, index, or proactively moderate** what you share.
+**[operator name]**. In the unmodified official client, your secret is encrypted before upload and the
+server stores only opaque ciphertext. The passphrase is shared separately and the link carries no key.
+The normal service therefore **does not receive and cannot read, scan, index, or proactively moderate**
+your plaintext. As with any website, compromise of the live site or your device can replace or observe
+client code.
 
 ## 2. No warranty
 
@@ -42,9 +43,10 @@ limited to what you paid for it (nothing).
 
 ## 4. Ephemeral — not storage
 
-Secrets are held in memory only, self-destruct on first read or when their timer expires, and are lost if
-the service restarts. This is not storage or backup; we do not guarantee retention, delivery, or recovery.
-Once a secret is gone, it cannot be recovered.
+Ciphertext rows are held in application memory, atomically removed on the first claim, removed at expiry,
+and all lost when the service restarts or deploys. Removal happens before the claim response is delivered,
+so even the first claimant may receive nothing after a network failure. This is not storage or backup; we
+do not guarantee retention, delivery, or recovery.
 
 ## 5. Acceptable use
 
@@ -72,23 +74,41 @@ illegal or breaches the acceptable-use list above; (c) your name and a contact e
 that your report is accurate and made in good faith. We may remove (purge) a reported secret by its ID. We
 cannot retrieve or disclose content we are unable to decrypt.
 
-## 8. Suspension, banning & rate limiting
+## 8. Abuse controls & service refusal
 
-We may, at our discretion and without notice, rate-limit, block, suspend, or permanently ban any user or
-IP address, or refuse service, for any reason — including suspected abuse.
+We may refuse service or reject requests without notice, including for suspected abuse. The application
+uses per-network-source request limits, row and byte quotas, escalating temporary bans, and global request
+and creation ceilings. These controls do not identify an individual or guarantee permanent exclusion.
+People behind a shared NAT/CGNAT may be limited together, while distributed actors can use many sources and may
+still exhaust global capacity. Because we keep no source-to-secret mapping, limiting a source does not
+locate or remove secrets already accepted. A reported secret can be purged only when its exact link or ID
+is supplied; otherwise accepted rows leave through claim, expiry, restart, or deployment. Legitimate
+high-frequency or automated use should set a short `ttl` so its budget recycles quickly.
 
 ## 9. Privacy
 
-We require no account, cannot read your secrets, keys, or passphrases, and never link your IP address to a
-secret. We process client IP addresses only to apply rate limiting and abuse controls; our lawful basis is
+We require no account. The application processes client IP addresses only to apply rate limiting and abuse
+controls; our lawful basis is
 our legitimate interest in keeping the service available and preventing abuse (GDPR / your local
-data-protection law, Art. 6(1)(f) or equivalent). This processing is transient — rate-limit counters reset
-each minute, temporary bans last at most 24 hours, we keep no persistent IP-to-secret log, and operational
-logs are rotated within a short, bounded window. The data controller is **[operator name]** (**[your
+data-protection law, Art. 6(1)(f) or equivalent). Before any abuse counter is stored, the IP prefix is
+replaced with a purpose-separated keyed token whose random key exists only in RAM. Rate tokens are retained
+for at most about three minutes, ban/strike tokens for about 48 hours, and volume-budget tokens for at
+most the configured secret TTL plus about 16 minutes. The application keeps no source-to-secret mapping.
+Operational request events retain only an allowlisted route class, method, response status, duration, and
+release; they exclude secret IDs, management tokens, ciphertext, phrases, bodies, full request paths, raw
+IP addresses, pseudonymous source tokens, and source-IP mappings. The data controller is **[operator name]** (**[your
 jurisdiction]**); for privacy questions or to exercise your rights (access, erasure, objection) contact
 **[abuse@your-domain]**, and you may lodge a complaint with your data-protection supervisory authority. If
-you put a CDN/edge provider (e.g. Cloudflare) in front, it processes connection data (incl. the client IP)
-as your processor — name it here. The service is therefore not "zero-log".
+you put a CDN/edge provider (e.g. Cloudflare) in front, it processes connection data (including the client
+IP and requested URL)
+as your processor — name it here and configure the shortest suitable retention. Abuse reports arrive by
+email and may contain reporter contact details; retain them only while needed for investigation or a legal
+obligation, then delete them. The public stats page may count homepage requests and successful secret
+creations per UTC day in memory; it does not set a visitor cookie or retain an IP, fingerprint, secret ID,
+or other visitor- or secret-level analytics record. Homepage figures do not claim to count unique people.
+The root-only host diagnostic retains hourly aggregate service/resource samples for about 13 months;
+container event logs are size-bounded. These records contain none of the excluded capability or source
+fields above. The service is therefore not "zero-log".
 
 ## 10. Changes & governing law
 
@@ -105,11 +125,14 @@ laws of **[your jurisdiction]**. Contact: **[operator name]** — **[abuse@your-
   Consider a short Privacy Policy and a lawful basis. Don't claim "zero-log" or "fully anonymous".
 - **Don't overstate the crypto.** Avoid "unbreakable" / "military-grade". The envelope uses AES-256-GCM
   (link mode) and PBKDF2-HMAC-SHA256 + AES-256-GCM (passphrase mode); state it without a guarantee.
+- **Anonymous abuse controls.** Do not describe network-source controls as account/user suspension or
+  permanent individual exclusion. State the shared NAT/CGNAT collateral, distributed-source limits, and
+  exact-ID-only purge behavior.
 - **DMCA (US).** To rely on the DMCA §512 safe harbor you must register a designated agent with the U.S.
   Copyright Office (online, ~$6, re-file every ~3 years) and follow notice-and-takedown.
 - **Section 230 (US only)** generally immunizes you for third-party content and good-faith removal, but has
   carve-outs (federal crime, IP, FOSTA, the 2025 TAKE IT DOWN Act's 48-hour NCII removal duty) and does
   not protect a non-US operator.
-- **Removal is by ID.** The in-app `POST /s/:id/report` is non-destructive (it only logs/flags, so a
-  stranger who has the URL can't delete an in-flight secret); actual takedown is an operator action that
-  purges by ID.
+- **Removal is by ID.** Notices arrive through the abuse contact above; actual takedown is an operator
+  action that purges by ID. Keep full-path/source HTTP logging disabled; retain only the sanitized
+  operational fields described above.

@@ -1,0 +1,10 @@
+# Install once:  cd ops && ./install-requirements-locked.sh
+collections:
+  # Pin every control-plane dependency: a fresh deploy must run the same reviewed automation, not whatever
+  # Galaxy happens to call latest that day. Dependabot does not cover Galaxy, so review bumps deliberately.
+  - { name: devsec.hardening,  version: "10.6.0" }  # CIS-grade OS + SSH hardening
+  - { name: community.docker,  version: "5.2.2" }   # docker_compose_v2
+  - { name: community.general, version: "13.3.0" }  # ufw
+  - { name: ansible.posix,     version: "2.2.2" }   # sysctl
+roles:
+  - { name: geerlingguy.docker, version: "8.0.0" }  # install Docker Engine

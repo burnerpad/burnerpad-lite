@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Remove only stopped images carrying Burnerpad's exact OCI source+title labels. Docker itself refuses to
+# remove an image used by a container. The newest N IDs per artifact remain available for verified rollback.
+set -euo pipefail
+retain={{ retain_verified_releases }}
+source_label='org.opencontainers.image.source=https://github.com/{{ github_repository }}'
+
+for title in burnerpad-lite burnerpad-lite-cloudflared; do
+  mapfile -t ids < <(docker image ls \
+    --filter "label=$source_label" \
+    --filter "label=org.opencontainers.image.title=$title" \
+    --format '{% raw %}{{.ID}}{% endraw %}' | awk '!seen[$0]++')
+  if [ "{% raw %}${#ids[@]}{% endraw %}" -le "$retain" ]; then
+    continue
+  fi
+  for id in "${ids[@]:$retain}"; do
+    docker image rm "$id" >/dev/null 2>&1 || true
+  done
+done

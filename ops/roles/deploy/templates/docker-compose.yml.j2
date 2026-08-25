@@ -1,0 +1,75 @@
+# Rendered by Ansible. app + cloudflared only (no nginx). Nothing is published to the host.
+services:
+  app:
+    image: "${APP_IMAGE}"
+    restart: unless-stopped
+    read_only: true                # tested: the release boots fine read-only
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=64m"]
+    mem_limit: {{ mem_limit }}      # L9 — an OOM restarts the container; the host survives
+    cpus: "{{ cpu_limit }}"
+    # RAM-only means no anonymous page may spill into the host's swap partition. Docker otherwise grants
+    # swap equal to mem_limit by default, even when a memory limit is present.
+    memswap_limit: {{ mem_limit }}
+    pids_limit: 512
+    ulimits: { core: 0 }
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    environment:
+      # Enumerate app config. In particular, NEVER use env_file here: .env also contains TUNNEL_TOKEN,
+      # which belongs only to cloudflared and must not be exposed to a compromised app process.
+      OPERATOR_NAME: "${OPERATOR_NAME}"
+      ABUSE_EMAIL: "${ABUSE_EMAIL}"
+      JURISDICTION: "${JURISDICTION}"
+      SECURITY_EMAIL: "${SECURITY_EMAIL}"
+      SECURITY_POLICY_URL: "${SECURITY_POLICY_URL}"
+      BURNERPAD_IMAGE_DIGEST: "${BURNERPAD_IMAGE_DIGEST}"
+      MAX_SECRETS: "${MAX_SECRETS}"
+      GLOBAL_CREATE_CEILING: "${GLOBAL_CREATE_CEILING}"
+      PER_IP_BUDGET: "${PER_IP_BUDGET}"
+      PER_IP_ROW_BUDGET: "${PER_IP_ROW_BUDGET}"
+      RELEASE_COOKIE: "${RELEASE_COOKIE}"
+      RELEASE_TMP: "{{ release_tmp }}"     # future-proofing (writes go to the tmpfs, not /app/tmp)
+      ERL_CRASH_DUMP_SECONDS: "0"           # no crash dump on disk
+      PORT: "4000"
+      REAL_IP_HEADER: "cf-connecting-ip"
+      TRUSTED_PROXIES: "172.28.0.0/16"      # the compose bridge (cloudflared) — M3
+    healthcheck:
+      test: ["CMD", "/bin/busybox", "wget", "-qO-", "http://127.0.0.1:4000/readyz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    # App events are capability-free route classes and aggregate operational errors. Retain a larger but
+    # still disk-bounded window than the tunnel, whose upstream error text is less controllable.
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "10" } }
+    networks: [backend]
+
+  cloudflared:
+    image: "${CLOUDFLARED_IMAGE}"
+    restart: unless-stopped
+    # Cloudflare warns that verbose tunnel logs can contain URLs and headers. Keep only errors locally;
+    # temporarily raise this during an incident, then lower it again and remove the diagnostic output.
+    command: tunnel --loglevel error --metrics 127.0.0.1:20241 run
+    read_only: true                       # it's the only internet-facing process — harden it too
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 128m
+    cpus: "0.25"
+    memswap_limit: 128m             # the tunnel credential must not be paged to host disk either
+    pids_limit: 128
+    ulimits: { core: 0 }
+    environment: { TUNNEL_TOKEN: "${TUNNEL_TOKEN}" } # this credential exists in this container only
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+    depends_on:
+      app: { condition: service_healthy }
+    networks: [backend, egress]
+
+networks:
+  # The app has no outbound dependency. Only cloudflared joins `egress`, so an app compromise cannot open
+  # an exfiltration connection to the internet; it can communicate only with the tunnel sidecar.
+  backend:
+    driver: bridge
+    internal: true
+    ipam: { config: [{ subnet: 172.28.0.0/16 }] }
+  egress:
+    driver: bridge
