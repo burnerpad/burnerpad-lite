@@ -13,7 +13,11 @@ export const requireDynamicNoStore = (response) => {
 
 export const requireStaticRevalidation = (initial, conditional) => {
   const etag = initial.headers.get("etag") || "";
+  const revalidatedEtag = conditional.headers.get("etag") || "";
+  const opaqueTag = (value) => value.startsWith("W/") ? value.slice(2) : value;
   if (!etag) throw new Error("static response omitted ETag");
   if (conditional.status !== 304) throw new Error("conditional static request was not revalidated");
-  if (conditional.headers.get("etag") !== etag) throw new Error("static ETag changed during revalidation");
+  if (!revalidatedEtag || opaqueTag(revalidatedEtag) !== opaqueTag(etag)) {
+    throw new Error("static ETag changed during revalidation");
+  }
 };

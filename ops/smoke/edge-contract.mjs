@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 import https from "node:https";
 import { createCanaryReporter } from "./canary-report.mjs";
 import { requireDynamicNoStore, requireStaticRevalidation } from "./edge-cache-contract.mjs";
+import { hasUnsafeHtmlTransformation } from "./html-contract.mjs";
 import { verifySourceIdentity } from "./edge-source-contract.mjs";
 
 const origin = (process.env.BURNERPAD_BASE_URL || "").replace(/\/$/, "");
@@ -96,7 +97,7 @@ try {
   if (!/no-store/i.test(page.headers.get("cache-control") || "")) throw new Error("HTML is cacheable");
   if ((page.headers.get("cf-cache-status") || "").toUpperCase() === "HIT") throw new Error("HTML edge-cache hit");
   const html = await page.text();
-  if (/rocket-loader|cdn-cgi\/scripts|data-cfasync|<script[^>]*>\s*\S/i.test(html)) {
+  if (hasUnsafeHtmlTransformation(html)) {
     throw new Error("HTML/script transformation detected");
   }
 

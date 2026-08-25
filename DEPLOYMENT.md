@@ -427,22 +427,217 @@ After the first connector is healthy, publish an application route:
 | Service | HTTP |
 | URL | `app:4000` |
 
-Apply every setting in [`ops/CLOUDFLARE_PROFILE.md`](ops/CLOUDFLARE_PROFILE.md). In particular:
+### Apply the complete Cloudflare zone profile
 
-- redirect HTTP to HTTPS; minimum TLS 1.2;
-- preserve the application's domain-wide HSTS `includeSubDomains; preload` contract;
-- never cache HTML, API, reveal, create, stats, health, or capability paths;
-- static `/crypto/*` and `/fonts/*` may be cached only with exact byte preservation;
-- provision the one exact Free-plan `http_ratelimit` rule in `ops/cloudflare/rate-limit-policy.json`; the
-  deploy play audits it before replacing the running application;
-- disable Rocket Loader, Auto Minify, email rewriting, HTML/JS transforms, and response-body modification;
-- do not enable Logpush/Logpull for this zone; Cloudflare metadata can include client IP plus a secret-ID
-  URL, so use the shortest suitable retention.
+This subsection is the authoritative, self-contained Cloudflare checklist. Apply it to **every new zone**
+before treating a deployment as production, and re-audit it after a plan change, dashboard migration,
+hostname/tunnel change, or transfer to another account. [`ops/CLOUDFLARE_PROFILE.md`](ops/CLOUDFLARE_PROFILE.md)
+is the compact invariant reference, not a substitute for these setup steps. If Cloudflare has moved a
+control, search the dashboard for the exact setting name. If a paid/deprecated control is not visible, mark
+it `not available` in the private operator record; do not silently substitute a different feature.
 
-The public `ops/smoke/edge-contract.mjs` check enforces redirect, TLS, headers, cache behavior, SRI bytes,
-transformation markers, and the trusted-proxy source path after every deploy and on schedule. Its
-match-only probe compares Cloudflare's edge observation with the app's resolved `/32` or `/64`, repeats
-with a forged `CF-Connecting-IP`, and never prints or returns either address.
+Export or screenshot the completed pages into the **private** operator runbook with the zone, hostname,
+date, plan, and reviewer. Exports can contain account and zone identifiers and must not be committed.
+
+#### Tunnel, hostname, and DNS
+
+- [ ] The zone is active on the expected **Free** plan and its authoritative nameservers are Cloudflare's.
+- [ ] The application hostname has exactly one published Tunnel route: **Service `HTTP`**, URL
+  **`app:4000`**. Do not enter `https://`, `localhost`, a container IP, or a host port.
+- [ ] The hostname is proxied through the Tunnel/Cloudflare edge. There is no public `A`/`AAAA` record or
+  other DNS record exposing the VPS address.
+- [ ] No Cloudflare Access application, Pages project, Load Balancer, secondary CDN, or SaaS custom-hostname
+  configuration intercepts the public Burnerpad hostname.
+- [ ] **Workers & Pages → Workers → Settings → Domains & Routes**, Snippets, and Worker Custom Domains have
+  no entry matching the Burnerpad hostname. A Worker can alter `CF-Connecting-IP`, HTML, caching, and request
+  semantics even when it eventually calls the origin.
+
+#### TLS and HTTPS
+
+| Dashboard location | Setting | Required value |
+|---|---|---|
+| **SSL/TLS → Overview** | SSL/TLS encryption mode | **Full (strict)** |
+| **SSL/TLS → Edge Certificates** | Universal SSL | Active; do not disable |
+| **SSL/TLS → Edge Certificates** | Always Use HTTPS | **On** |
+| **SSL/TLS → Edge Certificates** | Minimum TLS Version | **TLS 1.2** |
+| **SSL/TLS → Edge Certificates** | TLS 1.3 | **On** |
+| **SSL/TLS → Edge Certificates** | Automatic HTTPS Rewrites | **Off**; it rewrites HTML and is not an HTTP redirect |
+| **SSL/TLS → Edge Certificates** | Certificate Transparency Monitoring | **On**, with notifications sent to the operator |
+| **Speed → Settings → Protocol Optimization** | 0-RTT Connection Resumption | **Off** |
+
+After HTTPS, the redirect, and every current subdomain have been tested, configure **SSL/TLS → Edge
+Certificates → HTTP Strict Transport Security** as follows:
+
+| HSTS control | Required value |
+|---|---|
+| Enable HSTS | On |
+| Max Age Header | 12 months (Cloudflare's maximum; the app emits two years) |
+| Apply HSTS policy to subdomains | On |
+| Preload | On |
+| No-Sniff Header | On |
+
+This Cloudflare setting mirrors the app's `max-age=63072000; includeSubDomains; preload` header on
+Cloudflare-generated responses. It is a long-lived commitment: every current and future subdomain must
+remain available over HTTPS. The `preload` directive does not enroll the domain automatically. Check
+eligibility and submit separately at [hstspreload.org](https://hstspreload.org/) only after accepting that
+removing HTTPS can make the domain and its subdomains inaccessible until browser preload lists and learned
+HSTS state expire. Cloudflare documents the same lockout risk in its
+[HSTS requirements](https://developers.cloudflare.com/ssl/edge-certificates/additional-options/http-strict-transport-security/).
+
+Cloudflare supports 0-RTT only for nominally safe methods, but Burnerpad does not need it and the reviewed
+profile keeps replay-sensitive transport behavior out of the edge. Select ordinary TLS 1.3 **On**, not an
+API/configuration value that also enables `zrt`. See Cloudflare's separate documentation for
+[TLS 1.3](https://developers.cloudflare.com/ssl/edge-certificates/additional-options/tls-13/) and
+[0-RTT](https://developers.cloudflare.com/speed/optimization/protocol/0-rtt-connection-resumption/);
+enabling one does not require enabling the other.
+
+#### Caching and stale content
+
+| Dashboard location | Setting | Required value |
+|---|---|---|
+| **Caching → Configuration** | Browser Cache TTL | **Respect Existing Headers** |
+| **Caching → Configuration** | Caching Level, if visible | **Standard** |
+| **Caching → Configuration** | Always Online | **Off** |
+| **Caching → Configuration** | Development Mode | Off after setup/testing |
+| **Caching → Cache Rules** | Rules matching this hostname | None that override cache eligibility, Edge TTL, Browser TTL, cache key, or stale serving |
+
+Do not configure Cache Everything, an Edge/Browser TTL override, custom cache keys, stale-if-origin-down
+behavior, APO, or Cache Reserve for this hostname. Dynamic HTML, API, stats, health, readiness, and
+capability paths must preserve origin `Cache-Control: no-store` and must never be a Cloudflare cache hit.
+Stable `/crypto/*` assets deliberately use `Cache-Control: no-cache` plus ETag revalidation; `/fonts/*`
+uses its committed origin policy. Cloudflare's four-hour Browser Cache TTL rewrites `no-cache` to
+`max-age=14400`, which is a hard failure. Purging Cloudflare cannot remove that response from a visitor's
+browser. **Respect Existing Headers** is the control that prevents the override; Cloudflare documents this
+behavior in its [Browser Cache TTL guide](https://developers.cloudflare.com/cache/how-to/edge-browser-cache-ttl/set-browser-ttl/).
+[Always Online](https://developers.cloudflare.com/cache/how-to/always-online/) must remain off because it
+can serve an archived or stale copy when the origin is unavailable.
+
+Default Brotli/Zstandard/Gzip transport compression may remain enabled. Compression can legitimately turn
+an origin ETag into an equivalent weak `W/"..."` public validator; the canary still requires a `304` and the
+same case-sensitive opaque tag.
+
+#### HTML, JavaScript, and response transformation
+
+Turn off every feature that can rewrite HTML, inject JavaScript, replace assets, or add a second telemetry
+path. Several of these can be enabled automatically on a new Free zone.
+
+| Dashboard location | Setting | Required value |
+|---|---|---|
+| **Speed → Settings → Content Optimization** | Rocket Loader | **Off** |
+| **Speed → Settings → Content Optimization** | Auto Minify (HTML, CSS, JavaScript), if visible | All **Off** |
+| **Speed → Settings → Image Optimization** | Polish, if visible | **Off** |
+| **Security → Settings → Client-side abuse** | Email Address Obfuscation | **Off** |
+| **Security → Settings** | Replace insecure JavaScript libraries | **Off** |
+| **Web Analytics → Manage site** | Automatic Web Analytics/RUM injection | **Disable**; remove any site/snippet |
+| **Zaraz → Settings** | Auto-inject script and configured tools | Off / none |
+| **Rules → Transform Rules → Managed Transforms** | All request/response transforms | Off, especially visitor-IP and security-header transforms |
+| **Rules → Transform Rules** | URL, request-header, and response-header rules matching the hostname | None |
+| **Rules → Configuration Rules** | Rules matching the hostname | None that enable transforms, RUM, Zaraz, Fonts, Polish, or content conversion |
+
+Also leave Cloudflare Fonts, HTML-to-Markdown/content conversion, Cloudflare Apps, and any other
+response-body feature disabled. Mirage is deprecated and no longer available; record it as `not available`
+rather than looking for a replacement. Burnerpad serves four reviewed, same-origin, SRI-pinned
+`/crypto/*` assets and a strict CSP. Any additional script or changed asset byte is a deployment failure.
+Cloudflare documents that
+[Email Address Obfuscation](https://developers.cloudflare.com/waf/tools/scrape-shield/email-address-obfuscation/)
+injects a decoder script, [Replace insecure JavaScript libraries](https://developers.cloudflare.com/waf/tools/replace-insecure-js-libraries/)
+can rewrite page scripts, and [Web Analytics](https://developers.cloudflare.com/web-analytics/get-started/)
+can auto-inject RUM on proxied Free sites; all three behaviors are deliberately incompatible here. Review
+the current [Managed Transforms reference](https://developers.cloudflare.com/rules/transform/managed-transforms/reference/)
+as well as the custom-rule lists: an enabled transform may alter a request or response without a Worker.
+
+#### Source IP and network behavior
+
+| Dashboard location | Setting | Required value |
+|---|---|---|
+| **Network** | IPv6 Compatibility | On |
+| **Network** | Pseudo IPv4 | **Off** |
+| **Rules → Transform Rules → Managed Transforms** | Remove visitor IP headers | **Off** |
+| **Rules → Transform Rules → Managed Transforms** | Add visitor location headers | **Off** |
+| **Security → Settings** | IP Geolocation, if visible | Off |
+
+Do not add, remove, copy, or rewrite `CF-Connecting-IP`, `CF-Connecting-IPv6`, `X-Forwarded-For`, or
+`True-Client-IP`. Pseudo IPv4's **Overwrite Headers** mode replaces `CF-Connecting-IP` for IPv6 visitors
+and breaks the reviewed `/32` or `/64` abuse identity. The app accepts `CF-Connecting-IP` only from the
+dedicated private Docker subnet used by `cloudflared`; direct peers cannot supply a trusted value. The
+public contract compares Cloudflare's edge observation with the app's match-only result and then verifies
+that a forged forwarding header is either overwritten or rejected by Cloudflare. Cloudflare's
+[Pseudo IPv4 documentation](https://developers.cloudflare.com/network/pseudo-ipv4/) distinguishes the
+required **Off** state from the incompatible **Add Header** and **Overwrite Headers** modes.
+
+#### Challenges, security rules, and origin overrides
+
+| Dashboard location | Setting | Required value |
+|---|---|---|
+| **Security → Settings → Bot traffic** | Bot Fight Mode | **Off** |
+| **Security → Settings** | Under Attack Mode | **Off** except during a reviewed, time-bounded incident |
+| **Security → Settings** | Browser Integrity Check | **Off** |
+| **Security → Settings** | Managed `security.txt` | Disabled/deleted; the app owns `/.well-known/security.txt` |
+| **Security → Settings** | AI Labyrinth / Block AI Bots | Off for the reviewed profile |
+| **Security → Settings → Client-side abuse** | Hotlink Protection | Off |
+| **Security → Security rules** | Custom/managed challenge or block rules matching Burnerpad | None |
+| **Security → WAF → Tools** | IP Access, user-agent, or Zone Lockdown rules matching Burnerpad | None |
+
+Bot Fight Mode and Under Attack Mode can challenge API/CLI/canary traffic or inject JavaScript; they are
+not substitutes for the reviewed abuse controls. Leave Cloudflare's mandatory managed DDoS protection at
+its default and do not create DDoS overrides. The only operator-created traffic rule is the exact
+`http_ratelimit` policy from `ops/cloudflare/rate-limit-policy.json`, provisioned and independently audited
+with the repository scripts above. Do not add monitoring, verified-bot, source-IP, country, user-agent,
+query, or header bypasses. Cloudflare notes that
+[Bot Fight Mode](https://developers.cloudflare.com/bots/get-started/bot-fight-mode/) may issue computational
+challenges and cannot be skipped with ordinary WAF custom rules; keep it off rather than trying to bypass
+it for the application or canaries.
+
+#### Privacy, logging, and notifications
+
+- [ ] Web Analytics/RUM, Zaraz, Client-side Security/Page Shield data collection, and automatic script
+  monitoring are disabled for the hostname.
+- [ ] Logpush and legacy Logpull are not configured for this zone. Cloudflare can observe client addresses
+  and capability-bearing secret-ID paths; do not create a durable export of that metadata.
+- [ ] No third-party analytics, tag manager, Worker logging, or request mirroring receives Burnerpad
+  traffic.
+- [ ] Certificate-expiration, Tunnel-health, billing/spending, and security notifications go to a tested
+  operator channel. Notifications must not contain capability paths or response bodies.
+
+#### Verify and record the completed profile
+
+The public check enforces the externally observable subset: release identity, redirects, minimum TLS,
+HSTS/CSP, cache behavior, exact SRI bytes, ETag revalidation, absence of injected scripts, and trusted
+source-IP behavior. It cannot prove that an unused Worker route, future challenge rule, logging export, or
+dashboard toggle will remain harmless; the manual checklist is therefore required in addition to the
+canary.
+
+After the application route is available, run from the repository root:
+
+```bash
+BURNERPAD_BASE_URL=https://your-host.example node ops/smoke/edge-contract.mjs
+BURNERPAD_BASE_URL=https://your-host.example node ops/smoke/e2e-canary.mjs
+```
+
+Both commands must pass. Run them after every zone, plan, tunnel, hostname, DNS, Worker, rule, cache,
+transform, security, or network change. Then confirm the scheduled `public-canary` workflow and the
+independent external HTTPS monitor also pass.
+
+Use the reported privacy-safe stage to find the relevant control:
+
+| Failure stage | Inspect first |
+|---|---|
+| `configuration` | HTTPS origin syntax and expected revision configuration |
+| `api_cache` / `release_identity` | Tunnel route, running image revision, dynamic `no-store`, cache rules |
+| `health_cache` / `readiness_cache` | Tunnel/app health and any cache or challenge rule |
+| `https_redirect` | **Always Use HTTPS**; Automatic HTTPS Rewrites is not a substitute |
+| `minimum_tls` | Minimum TLS Version must reject TLS 1.0/1.1 |
+| `html_headers` | HSTS/CSP, HTML caching, Rocket Loader, Email Obfuscation, RUM/Zaraz, transforms |
+| `sri_assets` | Browser Cache TTL, asset transformation, SRI pins and served bytes |
+| `sri_revalidation` | ETag presence and `304` revalidation; do not disable ordinary compression |
+| `client_ip_trace` | Proxied DNS/Tunnel path and Cloudflare trace availability |
+| `client_ip_baseline` | Pseudo IPv4, visitor-IP transforms, Worker/CDN interception, trusted backend subnet |
+| `client_ip_spoof` | Header transforms or Worker interception; a Cloudflare `403` rejection is acceptable |
+
+Do not respond to a failed stage by weakening the canary, disabling CSP/SRI, broadening API tokens, or
+adding an IP bypass. Capture only the stage, observed release, repository commit, and non-sensitive setting
+state; never copy tokens, full Cloudflare responses, addresses, capability paths, or response bodies into
+an issue or chat.
 
 ## Configure identity and capacity
 

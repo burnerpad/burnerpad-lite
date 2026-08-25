@@ -242,6 +242,7 @@ jobs:
           node --check ops/smoke/edge-cache-contract.mjs
           node --check ops/smoke/edge-contract.mjs
           node --check ops/smoke/e2e-canary.mjs
+          node --check ops/smoke/html-contract.mjs
           node --check ops/smoke/readiness.mjs
           node --check ops/cloudflare/audit-rate-limit-policy.mjs
           node --check ops/cloudflare/provision-rate-limit-policy.mjs
