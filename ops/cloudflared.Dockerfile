@@ -46,5 +46,5 @@ COPY --from=build --chown=65532:65532 /cloudflared.sha256 /cloudflared.buildinfo
 USER 65532:65532
 ENTRYPOINT ["cloudflared", "--no-autoupdate"]
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD ["cloudflared", "tunnel", "ready"]
+  CMD ["cloudflared", "tunnel", "--metrics", "127.0.0.1:20241", "ready"]
 CMD ["version"]

@@ -593,6 +593,11 @@ public `sha-<HEAD>` app/tunnel images. It then:
 8. verifies the reported full revision and app image digest;
 9. runs the public edge contract and create/claim/decrypt canary from the laptop.
 
+The Compose task waits for both container health checks and may print no additional Ansible output for up
+to 120 seconds. The tunnel image checks cloudflared's explicit loopback metrics readiness endpoint; a timeout
+or unhealthy result stops the play before the revision/public canaries and must be diagnosed rather than
+treated as a successful deployment.
+
 The full-SHA tag is used only to locate the two GHCR artifacts. The root-owned, mode-`0600` `.env` and the
 non-secret Compose template together resolve their immutable digest references, the app image digest exposed
 by `/api/stats`, a fresh 64-character runtime-only Erlang cookie, operator configuration, resource limits,
