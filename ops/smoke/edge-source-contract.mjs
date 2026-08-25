@@ -54,7 +54,9 @@ const sourceProbe = async (request, origin, expectedIP, stage, extraHeaders = {}
     body: JSON.stringify({ expected_ip: expectedIP }),
   });
 
-  if (response.status !== 204 || !/no-store/i.test(response.headers.get("cache-control") || "")) {
+  const cloudflareRejectedSpoof = stage === "client_ip_spoof" && response.status === 403;
+  if ((!cloudflareRejectedSpoof && response.status !== 204) ||
+      !/no-store/i.test(response.headers.get("cache-control") || "")) {
     fail(stage, "deployed source resolver did not match the edge observation");
   }
 };

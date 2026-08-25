@@ -2,6 +2,9 @@
 
 This is part of the release contract, not an optional performance tweak. Burnerpad's origin is private
 behind an authenticated Cloudflare Tunnel; only `cloudflared` may supply `CF-Connecting-IP` to the app.
+The authoritative click-by-click setup and re-audit checklist is in the **Apply the complete Cloudflare zone
+profile** subsection of [`../DEPLOYMENT.md`](../DEPLOYMENT.md); complete it for every new zone. This file is
+the compact invariant reference.
 After any zone, tunnel, hostname, or network change, run:
 
 ```bash
@@ -9,19 +12,34 @@ BURNERPAD_BASE_URL=https://burnerpad.io node ops/smoke/edge-contract.mjs
 BURNERPAD_BASE_URL=https://burnerpad.io node ops/smoke/e2e-canary.mjs
 ```
 
-Configure the zone as follows and export/screenshoot the settings into the private operator runbook after
+Configure the zone as follows and export or screenshot the settings into the private operator runbook after
 each change (exports can contain account identifiers and do not belong in this public repository):
 
-- SSL/TLS mode: Full (strict); minimum TLS 1.2; Always Use HTTPS enabled.
-- HSTS: domain-wide, at least one year, `includeSubDomains`, preload. Confirm the domain remains accepted at
-  the browser preload service before enabling the `preload` token for a new domain.
+- SSL/TLS mode: Full (strict); minimum TLS 1.2; Always Use HTTPS enabled under **SSL/TLS → Edge
+  Certificates**; TLS 1.3 and Certificate Transparency Monitoring on; 0-RTT and Automatic HTTPS Rewrites
+  off.
+- Browser Cache TTL: **Respect Existing Headers** under **Caching → Configuration**. Do not leave the
+  zone-wide four-hour default or set a Cache Rule that overrides origin cache eligibility/TTL. Always
+  Online, APO, Cache Reserve, and stale-content overrides are off.
+- HSTS: the app emits two years with `includeSubDomains; preload`. After confirming every current and future
+  subdomain supports HTTPS, mirror it for Cloudflare-generated responses under **SSL/TLS → Edge
+  Certificates** with a 12-month max age, **includeSubDomains**, **Preload**, and **No-Sniff**. Confirm the
+  domain is eligible before separately submitting it to the browser preload service; the directive alone
+  does not enroll it.
 - Never cache HTML, `/api/*`, `/healthz`, or `/readyz`; preserve origin `Cache-Control: no-store`.
 - `/crypto/*` uses its origin `Cache-Control: no-cache` and ETag revalidation. Do not apply Cache Everything,
   Edge Cache TTL, or an immutable override to these stable filenames. `/fonts/*` may use the origin policy.
-- Disable Rocket Loader, Auto Minify, email-address obfuscation, Mirage/Polish transformations, and any
-  HTML/script rewrite for the hostname. No Worker may intercept the hostname unless separately reviewed.
+- Disable Rocket Loader, Auto Minify, Email Address Obfuscation, Replace Insecure JavaScript, Polish,
+  Web Analytics/RUM injection, Zaraz, Cloudflare Fonts, and every HTML/script rewrite. Mirage is deprecated.
+- Pseudo IPv4 is off; IPv6 compatibility is on; visitor-IP removal/location transforms and any custom
+  `CF-Connecting-IP`/forwarding-header transform are off. No Worker, Snippet, Access application, or
+  secondary CDN may intercept the hostname unless separately reviewed.
+- Bot Fight Mode, Under Attack Mode, Browser Integrity Check, managed `security.txt`, AI crawler features,
+  hotlink protection, and unreviewed custom/managed challenge or block rules are off. Keep only Cloudflare's
+  default managed DDoS protection and the repository-provisioned Free-plan rate-limit rule.
 - Do not enable Logpush/legacy Logpull for this zone. If incident logging is unavoidable, exclude query,
-  path, headers, source-IP mapping, and response bodies; keep the shortest useful retention.
+  path, headers, source-IP mapping, and response bodies; keep the shortest useful retention. Do not enable
+  Client-side Security/Page Shield collection or third-party request mirroring.
 - The tunnel route is `https://<hostname>` → `http://app:4000`. The app trusts only the validated dedicated
   Compose `backend_subnet` (a private `/16` through `/29`); Docker IPAM and `TRUSTED_PROXIES` are rendered
   from that one value. Rerun the ClientIP tests and public checks if the network changes.

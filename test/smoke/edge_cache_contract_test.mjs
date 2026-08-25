@@ -38,3 +38,10 @@ test("static cache checks require a matching 304 ETag", () => {
     new Response(null, { status: 304, headers: { etag: '"asset-v2"' } }),
   ));
 });
+
+test("static revalidation accepts Cloudflare weakening a compressed response ETag", () => {
+  const compressed = new Response("asset", { headers: { etag: 'W/"asset-v1"' } });
+  const revalidated = new Response(null, { status: 304, headers: { etag: '"asset-v1"' } });
+
+  assert.doesNotThrow(() => requireStaticRevalidation(compressed, revalidated));
+});

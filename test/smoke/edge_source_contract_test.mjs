@@ -45,6 +45,18 @@ test("source contract accepts an IPv6 edge observation without normalizing it cl
   ]);
 });
 
+test("source contract accepts Cloudflare rejecting the forged forwarding header", async () => {
+  let calls = 0;
+  const request = async (url) => {
+    calls++;
+    if (url.endsWith("/cdn-cgi/trace")) return response({ body: "ip=203.0.113.7\n" });
+    return response({ status: calls === 3 ? 403 : 204, cacheControl: "no-store" });
+  };
+
+  await verifySourceIdentity(request, "https://burnerpad.example");
+  assert.equal(calls, 3);
+});
+
 test("source contract rejects a malformed or ambiguous Cloudflare trace without echoing it", async () => {
   for (const body of ["colo=BCN\n", "ip=203.0.113.7\nip=203.0.113.8\n", "ip=not-an-ip\n"]) {
     const request = async () => response({ body });
