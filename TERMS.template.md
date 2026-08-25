@@ -106,7 +106,7 @@ email and may contain reporter contact details; retain them only while needed fo
 obligation, then delete them. The public stats page may count homepage requests and successful secret
 creations per UTC day in memory; it does not set a visitor cookie or retain an IP, fingerprint, secret ID,
 or other visitor- or secret-level analytics record. Homepage figures do not claim to count unique people.
-The root-only host diagnostic retains hourly aggregate service/resource samples for about 13 months;
+The root-only host diagnostic retains hourly aggregate service/resource samples for up to 12 months;
 container event logs are size-bounded. These records contain none of the excluded capability or source
 fields above. The service is therefore not "zero-log".
 

@@ -1,10 +1,12 @@
 defmodule Burnerpad.MixProject do
   use Mix.Project
 
+  @app_version Path.join(__DIR__, "VERSION") |> File.read!() |> String.trim()
+
   def project do
     [
       app: :burnerpad,
-      version: "0.1.0",
+      version: @app_version,
       elixir: "~> 1.20.3",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,

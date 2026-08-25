@@ -6,6 +6,13 @@ import { readFileSync } from "node:fs";
 
 const release = readFileSync(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
 const deploy = readFileSync(new URL("../../ops/roles/deploy/tasks/main.yml", import.meta.url), "utf8");
+const version = readFileSync(new URL("../../VERSION", import.meta.url), "utf8").trim();
+const dockerfile = readFileSync(new URL("../../Dockerfile", import.meta.url), "utf8");
+
+assert.equal(version, "1.0.0");
+assert.match(release, /org\.opencontainers\.image\.version=\$\{\{ steps\.identity\.outputs\.version \}\}/);
+assert.match(release, /BURNERPAD_VERSION=\$\{\{ steps\.identity\.outputs\.version \}\}/);
+assert.match(dockerfile, new RegExp(`ARG BURNERPAD_VERSION=${version.replaceAll(".", "\\.")}`));
 
 const orderedReleaseSteps = [
   "- name: Build and publish ${{ matrix.version }} image",

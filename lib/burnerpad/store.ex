@@ -63,7 +63,7 @@ defmodule Burnerpad.Store do
 
       case :ets.take(@table, id) do
         [{^id, blob, _hash, exp}] when exp > deadline ->
-          bump(:revealed)
+          bump(:claimed)
           {:ok, blob}
 
         [_expired] ->
@@ -108,7 +108,7 @@ defmodule Burnerpad.Store do
 
   @doc """
   Operator takedown: delete a secret by id **without** the management token, for actioning an abuse /
-  illegal-content notice (DSA Art. 16). Counts under its own `:purged` metric — NOT `:revealed` — so the
+  illegal-content notice (DSA Art. 16). Counts under its own `:purged` metric — NOT `:claimed` — so the
   public transparency stats are not skewed by a takedown. `:ok` if a row was removed, else `:gone`.
   """
   def purge(id) do
@@ -159,7 +159,7 @@ defmodule Burnerpad.Store do
       stored: count(),
       capacity: Config.get(:max_secrets),
       created: ctr(:created),
-      revealed: ctr(:revealed),
+      claimed: ctr(:claimed),
       burned: ctr(:burned),
       purged: ctr(:purged),
       expired: ctr(:expired),

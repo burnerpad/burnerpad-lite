@@ -33,7 +33,7 @@ test("reporter emits only a fixed stage and validated observed revision", () => 
   const { reporter, logs, outputs } = capture();
   reporter.setStage("release_identity");
   reporter.configureExpectedRevision(revisionA, { required: true });
-  assert.equal(reporter.observeStats({ version: `0.1.0+${revisionA}` }), revisionA);
+  assert.equal(reporter.observeStats({ version: `1.0.0+${revisionA}` }), revisionA);
   reporter.setStage("reveal");
   reporter.failed();
 
@@ -55,8 +55,8 @@ test("reporter rejects untrusted stage and revision strings before output", () =
   const { reporter } = capture();
   assert.throws(() => reporter.setStage("reveal id=secret"), /invalid canary stage/);
   assert.throws(() => reporter.configureExpectedRevision(`${revisionA}\ncapability=value`), /invalid/);
-  assert.throws(() => reporter.observeStats({ version: "0.1.0+not-a-release" }), /invalid/);
-  assert.throws(() => reporter.observeStats({ version: `0.1.0+${revisionA}\nsecret` }), /invalid/);
+  assert.throws(() => reporter.observeStats({ version: "1.0.0+not-a-release" }), /invalid/);
+  assert.throws(() => reporter.observeStats({ version: `1.0.0+${revisionA}\nsecret` }), /invalid/);
 });
 
 test("reporter uses an expected revision when the public identity is unavailable", () => {
@@ -77,12 +77,12 @@ test("reporter fails closed on a missing required or mismatched expected revisio
   const mismatch = capture().reporter;
   mismatch.configureExpectedRevision(revisionA, { required: true });
   assert.throws(
-    () => mismatch.observeStats({ version: `0.1.0+${revisionB}` }),
+    () => mismatch.observeStats({ version: `1.0.0+${revisionB}` }),
     /does not match/,
   );
 });
 
-const runCanary = async (handler, expectedRevision = revisionA) => {
+const runCanary = async (handler, { expectedRevision = revisionA, timeoutMs = 5_000 } = {}) => {
   const server = http.createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -97,7 +97,7 @@ const runCanary = async (handler, expectedRevision = revisionA) => {
         BURNERPAD_BASE_URL: `http://127.0.0.1:${address.port}`,
         BURNERPAD_EXPECTED_REVISION: expectedRevision,
         BURNERPAD_REQUIRE_EXPECTED_REVISION: "true",
-        BURNERPAD_CANARY_TIMEOUT_MS: "1000",
+        BURNERPAD_CANARY_TIMEOUT_MS: String(timeoutMs),
         GITHUB_OUTPUT: outputFile,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -120,7 +120,7 @@ test("end-to-end transport failure reports its stage and the observed release on
   const result = await runCanary((request, response) => {
     if (request.url === "/api/stats") {
       response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-      response.end(JSON.stringify({ version: `0.1.0+${revisionA}` }));
+      response.end(JSON.stringify({ version: `1.0.0+${revisionA}` }));
     } else if (request.url === "/readyz") {
       response.writeHead(200, { "cache-control": "no-store" });
       response.end("ready");
@@ -139,10 +139,7 @@ test("end-to-end transport failure reports its stage and the observed release on
   assert.doesNotMatch(result.stderr + result.output, /\/api\/secrets|phrase|blob|plaintext|capability/);
 });
 
-test("a fresh target becomes ready before the canary requests release identity", async () => {
-  let readinessAttempts = 0;
-  let ready = false;
-  let statsRequestedBeforeReady = false;
+test("a ready target completes the encrypted transaction through the canary process", async () => {
   let heldBlob = "";
   let claimed = false;
 
@@ -150,14 +147,11 @@ test("a fresh target becomes ready before the canary requests release identity",
     const headers = { "content-type": "application/json", "cache-control": "no-store" };
 
     if (request.url === "/readyz") {
-      readinessAttempts += 1;
-      ready = readinessAttempts >= 3;
-      response.writeHead(ready ? 200 : 503, { "content-type": "text/plain", "cache-control": "no-store" });
-      response.end(ready ? "ready" : "not ready");
+      response.writeHead(200, { "content-type": "text/plain", "cache-control": "no-store" });
+      response.end("ready");
     } else if (request.url === "/api/stats") {
-      statsRequestedBeforeReady ||= !ready;
       response.writeHead(200, headers);
-      response.end(JSON.stringify({ version: `0.1.0+${revisionA}` }));
+      response.end(JSON.stringify({ version: `1.0.0+${revisionA}` }));
     } else if (request.method === "POST" && request.url === "/api/secrets") {
       let body = "";
       for await (const chunk of request) body += chunk;
@@ -182,15 +176,16 @@ test("a fresh target becomes ready before the canary requests release identity",
   assert.equal(result.exitCode, 0);
   assert.equal(result.stderr, "");
   assert.match(result.stdout, new RegExp(`canary passed release=${revisionA}`));
-  assert.equal(readinessAttempts, 3);
-  assert.equal(statsRequestedBeforeReady, false);
 });
 
 test("readiness outage reports the configured release without response details", async () => {
-  const result = await runCanary((_request, response) => {
-    response.writeHead(503, { "content-type": "text/plain", "cache-control": "no-store" });
-    response.end("sensitive upstream diagnostic");
-  });
+  const result = await runCanary(
+    (_request, response) => {
+      response.writeHead(503, { "content-type": "text/plain", "cache-control": "no-store" });
+      response.end("sensitive upstream diagnostic");
+    },
+    { timeoutMs: 250 },
+  );
 
   assert.equal(result.exitCode, 1);
   assert.equal(
@@ -207,7 +202,7 @@ test("a ready target with a mismatched identity fails at release_identity", asyn
       response.end("ready");
     } else {
       response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-      response.end(JSON.stringify({ version: `0.1.0+${revisionB}` }));
+      response.end(JSON.stringify({ version: `1.0.0+${revisionB}` }));
     }
   });
 

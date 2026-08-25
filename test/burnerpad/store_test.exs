@@ -213,7 +213,7 @@ defmodule Burnerpad.StoreTest do
 
     m = Store.metrics()
     assert m.created == 2
-    assert m.revealed == 1
+    assert m.claimed == 1
     assert m.burned == 1
     assert m.stored == 0
     assert m.resident == 0

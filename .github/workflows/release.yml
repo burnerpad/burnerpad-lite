@@ -112,9 +112,20 @@ jobs:
           REVISION: ${{ github.event.workflow_run.head_sha }}
           SUFFIX: ${{ matrix.suffix }}
         run: |
+          app_version=$(tr -d '\n' < VERSION)
+          printf '%s\n' "$app_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::VERSION must contain an X.Y.Z semantic application version"
+            exit 1
+          }
+          if [ -z "$SUFFIX" ]; then
+            component_version=$app_version
+          else
+            component_version=$(sed -n 's/^ARG CLOUDFLARED_VERSION=//p' ops/cloudflared.Dockerfile)
+          fi
           image="ghcr.io/${GITHUB_REPOSITORY,,}${SUFFIX}"
           echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "tag=$image:sha-$REVISION" >> "$GITHUB_OUTPUT"
+          echo "version=$component_version" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           registry: ghcr.io
@@ -133,10 +144,10 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
-            org.opencontainers.image.version=${{ github.event.workflow_run.head_sha }}
+            org.opencontainers.image.version=${{ steps.identity.outputs.version }}
           build-args: |
             BURNERPAD_REVISION=${{ github.event.workflow_run.head_sha }}
-            BURNERPAD_VERSION=${{ github.event.workflow_run.head_sha }}
+            BURNERPAD_VERSION=${{ steps.identity.outputs.version }}
           provenance: mode=max
           sbom: true
       # The SHA tag is discovery only. Approval is bound to the immutable registry digest returned by

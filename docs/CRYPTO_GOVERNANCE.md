@@ -44,6 +44,8 @@ independent cryptographic expert.
   atomic protocol unit.
 - The parent updates only to a reviewed, signed, immutable nested release tag and regenerates committed
   SRI explicitly.
+- Parent CI verifies that the gitlink exactly matches the nested package-version tag and validates that
+  annotated tag against the parent-owned release-signer trust file before testing or publishing it.
 - Security claims in README, context, architecture, terms, UI, CLI, and security policy change together.
 
 Because there is no second maintainer, required CI, signed history, immutable artifacts, public provenance,

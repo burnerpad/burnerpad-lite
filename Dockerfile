@@ -22,7 +22,7 @@ RUN mix archive.install git https://github.com/hexpm/hex.git \
 
 # Copy the lock too, so the image builds EXACTLY what was tested + audited (M4), and fail the build on any
 # dependency advisory (M9): a vulnerable lock can never be baked into an image.
-COPY mix.exs mix.lock ./
+COPY mix.exs mix.lock VERSION ./
 RUN mix deps.get --only prod && mix hex.audit && mix deps.compile
 
 COPY lib lib
@@ -44,7 +44,7 @@ RUN mix compile --warnings-as-errors \
 FROM ubuntu:noble-20260810@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS runtime
 
 ARG BURNERPAD_REVISION=unknown
-ARG BURNERPAD_VERSION=dev
+ARG BURNERPAD_VERSION=1.0.0
 LABEL org.opencontainers.image.source="https://github.com/burnerpad/burnerpad-lite" \
       org.opencontainers.image.title="burnerpad-lite" \
       org.opencontainers.image.revision=$BURNERPAD_REVISION \

@@ -7,6 +7,7 @@
 import { createRequire } from "node:module";
 import crypto from "node:crypto";
 import { createCanaryReporter } from "./canary-report.mjs";
+import { waitUntilReady } from "./readiness.mjs";
 
 const require = createRequire(import.meta.url);
 const C = require("../../priv/static/vendor/crypto-js/burnerpad-crypto.js");
@@ -14,7 +15,6 @@ const base = (process.env.BURNERPAD_BASE_URL || "").replace(/\/$/, "");
 const expectedRevision = process.env.BURNERPAD_EXPECTED_REVISION || "";
 const requireExpectedRevision = process.env.BURNERPAD_REQUIRE_EXPECTED_REVISION === "true";
 const timeoutMs = Number(process.env.BURNERPAD_CANARY_TIMEOUT_MS || 15_000);
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const reporter = createCanaryReporter({ check: "end_to_end" });
 const requireNoStore = (response) => {
   if (!/(?:^|,)\s*no-store\s*(?:,|$)/i.test(response.headers.get("cache-control") || "")) {
@@ -41,19 +41,7 @@ try {
   reporter.setStage("readiness");
   // A freshly started release may refuse connections for a few hundred milliseconds. Poll only the
   // readiness endpoint within the same bounded canary budget; transaction stages remain single-shot.
-  const readyDeadline = Date.now() + timeoutMs;
-  let isReady = false;
-  while (!isReady && Date.now() < readyDeadline) {
-    try {
-      const health = await request("/readyz", {}, readyDeadline - Date.now());
-      requireNoStore(health);
-      isReady = health.ok && (await health.text()) === "ready";
-    } catch (_error) {
-      // Connection refusal during the bounded startup window is expected.
-    }
-    if (!isReady) await sleep(Math.min(200, Math.max(0, readyDeadline - Date.now())));
-  }
-  if (!isReady) throw new Error("readiness rejected");
+  if (!(await waitUntilReady({ request, timeoutMs }))) throw new Error("readiness rejected");
 
   // Capture the deployed identity before creating any capability material. A scheduled run also has an
   // independently maintained expected revision, which remains reportable if this public request fails.

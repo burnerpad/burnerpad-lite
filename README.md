@@ -23,8 +23,9 @@ that delivery-path risk. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for 
 
 ## Run it
 
-The pinned toolchain is **Elixir 1.20.3 / Erlang 29.0.5 / Node 24.19.0** (`.tool-versions`). The browser
-crypto is a git submodule, so pull it too:
+The application version is **1.0.0**, sourced from `VERSION`; a deployed instance reports it together with
+its immutable Git revision as `1.0.0+<revision>`. The pinned toolchain is **Elixir 1.20.3 / Erlang 29.0.5 /
+Node 24.19.0** (`.tool-versions`). The browser crypto is a git submodule, so pull it too:
 
 ```bash
 git clone --recurse-submodules https://github.com/burnerpad/burnerpad-lite
@@ -157,7 +158,7 @@ method, latency and queue results, rejected calibrations, and reproducible comma
 mix test          # the Elixir suite (store, abuse, HTTP, client-IP keying)
 mix test.crypto   # the browser crypto bundle, cross-checked against node:crypto (needs Node ≥ 20)
 mix test.core     # unit tests for crypto-app.js's DOM-free Core (display/canon/paste-cap/strength)
-mix test.edge     # unit tests for public canary reporting and the Cloudflare source-identity contract
+mix test.edge     # deterministic canary readiness/reporting and public Cloudflare contract tests
 ```
 
 Optional headless-browser click-through (Playwright — dev/CI only, isolated in

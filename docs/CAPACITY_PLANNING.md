@@ -38,7 +38,7 @@ one-day TTLs, unique benchmark source addresses, and only public HTTP endpoints.
 1. filled the store to `MAX_SECRETS` with maximum-size ciphertexts;
 2. required 256 additional valid creates to return `503` at capacity;
 3. probed readiness and public stats 256 times while full;
-4. concurrently revealed 1,000 rows and revoked 1,000 rows with their management tokens;
+4. concurrently claimed 1,000 rows and revoked 1,000 rows with their management tokens;
 5. refilled all 2,000 freed slots and required capacity rejection again;
 6. stopped mutation load, waited one second, then required 256 recovery probes to succeed;
 7. sampled public queue/busy/error metrics every 100 ms and read final BEAM, ETS, and cgroup memory.

@@ -239,7 +239,7 @@ Tests:
 mix test          # the Elixir suite (store, abuse, HTTP/router + SRI, client-IP keying)
 mix test.crypto   # runs the VENDORED bundle's own conformance suite under Node (needs Node ≥ 20)
 mix test.core     # Node unit tests for crypto-app.js's DOM-free Core (display/canon/paste-cap/strength)
-mix test.edge     # Node unit tests for the public Cloudflare source-identity contract
+mix test.edge     # deterministic canary readiness/reporting and public Cloudflare contract tests
 mix format --check-formatted
 mix compile --warnings-as-errors
 # optional real-browser click-through (dev/CI only):

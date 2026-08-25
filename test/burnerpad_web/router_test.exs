@@ -458,6 +458,7 @@ defmodule BurnerpadWeb.RouterTest do
     assert page.status == 200
     assert page.resp_body =~ "Transparency"
     assert page.resp_body =~ "resident ciphertexts"
+    assert page.resp_body =~ "claimed since restart"
     assert page.resp_body =~ "Daily activity"
     assert page.resp_body =~ "Homepage requests and successful secret creations"
     assert page.resp_body =~ "secrets created today"
@@ -476,6 +477,8 @@ defmodule BurnerpadWeb.RouterTest do
     m = JSON.decode!(j.resp_body)
     assert m["created"] >= 1
     assert m["stored"] >= 1
+    assert Map.has_key?(m, "claimed")
+    refute Map.has_key?(m, "revealed")
     assert Map.has_key?(m, "throttled_total")
     assert Map.has_key?(m, "active_bans")
     assert m["version"] == Burnerpad.Config.version()
@@ -571,6 +574,8 @@ defmodule BurnerpadWeb.RouterTest do
     assert body =~ "Limitation of liability"
     assert body =~ "Impulsa SLU"
     assert body =~ "abuse@burnerpad.io"
+    assert body =~ "up to 12 months"
+    refute body =~ "13 months"
     refute body =~ "Template — not legal advice"
     refute body =~ "[abuse@your-domain]"
   end

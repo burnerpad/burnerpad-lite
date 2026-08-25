@@ -373,7 +373,7 @@ interstitial `GET /s/:id` returns a **`404` HTML "Not found"** page (a never-exi
 look identical), while a live ID returns `200`; this is a liveness oracle, not a content oracle. The
 130-bit ID makes blind discovery infeasible. `POST /api/secrets/:id/reveal` returns
 **Generic `404` for every unavailable state.** The service knows only that no row is present now; it does
-not retain enough history to distinguish read, expired, purged, restarted-away, malformed, or never-created
+not retain enough history to distinguish claimed, expired, purged, restarted-away, malformed, or never-created
 IDs. Burn likewise returns the same `404` for a wrong token and an absent row, avoiding a live-ID oracle.
 
 **Create** accepts `{ "blob": "<base64url>", "ttl": <seconds, optional> }`. The server decodes the blob,
@@ -394,7 +394,7 @@ not retry automatically, and a deliberate resubmission returns `404` if the firs
 matches the stored hash.
 
 **Stats** (`/stats` HTML, `/api/stats` JSON) is a **public** transparency page: resident ciphertext rows,
-lifetime counts (created / read / revoked / expired), capacity, uptime, and abuse totals (requests
+since-restart counts (created / claimed / revoked / expired), capacity, uptime, and abuse totals (requests
 throttled, bans issued, sources currently blocked), plus 14 UTC days of homepage request counts and
 successful secret-creation counts. It is **capability-free and aggregate-only** — no secret contents, ids,
 IPs, cookies,
@@ -488,7 +488,7 @@ source-to-secret mapping is added to distinguish them.
 contact on `/terms`), extract the secret id from the reported `/s/:id` or `/api/secrets/:id` URL and purge
 it: `bin/burnerpad rpc 'Burnerpad.Store.purge("THEID")'` (or `Burnerpad.Store.purge/1` from an attached
 `iex`). It deletes by id **without** the management token and counts under the `:purged` stat (not
-`:revealed`, so transparency numbers stay honest). Because secrets are burn-on-read and expire after 24 h
+`:claimed`, so transparency numbers stay honest). Because secrets are burn-on-read and expire after 24 h
 by default, a reported secret is usually already gone by the time a notice arrives.
 
 **Resolving the real client IP.** Behind a reverse proxy, the client IP comes from a configurable header
