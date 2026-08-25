@@ -198,6 +198,8 @@ jobs:
         run: test/ci/runtime_credentials_test.sh
       - name: Deployment diagnoses missing, outdated, or unauthenticated verification tools
         run: test/ci/control_tools_test.sh
+      - name: Deployment accepts safe current and legacy resident counts
+        run: node --test test/ci/resident_count_test.mjs
       - name: Deployment rejects missing or placeholder production configuration
         run: test/ci/deployment_configuration_test.sh
       - name: Verify and install pinned Galaxy inputs
@@ -239,6 +241,7 @@ jobs:
           node --check ops/smoke/readiness.mjs
           node --check ops/cloudflare/audit-rate-limit-policy.mjs
           node --check ops/cloudflare/provision-rate-limit-policy.mjs
+          node --check ops/extract-resident-count.mjs
           node --check test/load/maximum_state.mjs
       - name: Test immutable release-image approval policy
         run: node test/ci/release_image_gate_test.mjs

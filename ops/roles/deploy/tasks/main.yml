@@ -145,14 +145,29 @@
     wget -qO- http://127.0.0.1:4000/api/stats
   register: _predeploy_stats
   changed_when: false
+  failed_when: false
   when: _existing_app.stdout | trim | length > 0
+
+- name: Extract a current or legacy resident ciphertext count
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: node "{{ playbook_dir }}/extract-resident-count.mjs"
+  args:
+    stdin: "{{ _predeploy_stats.stdout }}"
+    stdin_add_newline: false
+  register: _predeploy_resident_count
+  changed_when: false
+  failed_when: false
+  when:
+    - _existing_app.stdout | trim | length > 0
+    - _predeploy_stats.rc == 0
 
 - name: Refuse a blind replacement when a running app cannot report its resident count
   ansible.builtin.assert:
     that:
-      - _predeploy_stats.rc == 0
-      - (_predeploy_stats.stdout | from_json).resident is number
-      - (_predeploy_stats.stdout | from_json).resident | int >= 0
+      - _predeploy_stats.rc | default(1) == 0
+      - _predeploy_resident_count.rc | default(1) == 0
+      - _predeploy_resident_count.stdout | default('') is match('^(0|[1-9][0-9]*)$')
     fail_msg: >-
       A running app exists but its aggregate resident count could not be verified. Deployment stopped
       rather than silently destroying an unknown number of ciphertext rows.
@@ -161,7 +176,7 @@
 - name: Record how many resident rows this deployment will remove
   ansible.builtin.set_fact:
     _resident_before_deploy: >-
-      {{ ((_predeploy_stats.stdout | from_json).resident | int)
+      {{ (_predeploy_resident_count.stdout | int)
          if _existing_app.stdout | trim | length > 0
          else 0 }}
 

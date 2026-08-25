@@ -126,8 +126,9 @@ cp inventory.example.ini inventory.ini
 install -m 600 group_vars/all/secrets.example.yml group_vars/all/secrets.yml
 ```
 
-The fail-fast check requires a reachable Docker daemon, a runnable Cosign, a GitHub CLI that provides
-`gh attestation verify`, and an authenticated GitHub.com session. It prints no authentication material.
+The fail-fast check requires the exact Node version pinned in `.tool-versions`, a reachable Docker daemon,
+a runnable Cosign, a GitHub CLI that provides `gh attestation verify`, and an authenticated GitHub.com
+session. It prints no authentication material.
 Before committing any deployment change, follow
 [`CONTRIBUTING.md` → Signed commits and DCO](CONTRIBUTING.md#signed-commits-and-dco): review staged paths,
 use `git commit -S -s`, verify locally, and confirm GitHub marks every pull-request commit **Verified**.
@@ -564,7 +565,8 @@ public `sha-<HEAD>` app/tunnel images. It then:
 3. verifies keyless Sigstore signatures and GitHub build-provenance attestations;
 4. audits the exact Cloudflare Free-plan rate-limit rule with the read-only token;
 5. generates a new runtime-only Erlang cookie and renders root-owned, mode-`0600` runtime configuration;
-6. reads `/api/stats`; if any resident ciphertext exists, requires literal `DESTROY`;
+6. reads `/api/stats` and accepts the legacy `stored` name only for upgrading a pre-1.0 release; if any
+   resident ciphertext exists, requires literal `DESTROY`;
 7. starts digest-pinned, read-only, cap-dropped, CPU/memory/PID-bounded containers and waits for `/readyz`;
 8. verifies the reported full revision and app image digest;
 9. runs the public edge contract and create/claim/decrypt canary from the laptop.
