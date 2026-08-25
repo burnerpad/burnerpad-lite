@@ -304,6 +304,28 @@ deployment; see Cloudflare's
 Do not broaden the permission if the audit returns an error—first verify that the token is active, scoped
 to the correct zone, and that the copied Zone ID is the ID for that same domain.
 
+### Store the permanent Cloudflare values
+
+Before creating the temporary write token, store the Tunnel token, Zone ID, and newly displayed read-only
+token in the gitignored, operator-local `ops/group_vars/all/secrets.yml`:
+
+```yaml
+cloudflare_tunnel_token: "eyJ..."
+cloudflare_zone_id: "0123456789abcdef0123456789abcdef"
+cloudflare_rulesets_read_token: "read-only-zone-rulesets-token"
+```
+
+The Zone WAF **Edit** token used in the next subsection is temporary and must never be added to this file.
+Edit `secrets.yml` directly with a local editor; never put a real token in a shell command, chat, issue,
+screenshot, workflow secret, or commit. If the file is plaintext, keep it mode `0600`; if it is
+Vault-encrypted, use `ansible-vault edit` rather than decrypting it beside the repository. The release
+workflow does not need any Cloudflare credential.
+
+The deploy validates these permanent values and calls the exact read-only
+`/zones/{zone_id}/rulesets/phases/http_ratelimit/entrypoint` endpoint before replacing the running app. If
+the read-only token is exposed, revoke it, create another token with the same narrow scope, and replace only
+`cloudflare_rulesets_read_token` in the local secrets file.
+
 ### Provision the one Free-plan rate-limit rule
 
 Cloudflare Free permits one rate-limit rule, only Path and Verified Bot in its matching expression,
@@ -311,10 +333,23 @@ per-IP counting, and 10-second counting and mitigation periods. The committed po
 readiness, crypto, and font paths into that one allowance. These limits are documented in Cloudflare's
 [rate-limiting availability table](https://developers.cloudflare.com/waf/rate-limiting-rules/#availability).
 
-Provision this rule **once**, before the first deployment. Do not build it manually in the dashboard: the
-audit depends on the committed stable rule `ref`, and the provisioning script supplies the exact API
-representation. The script creates only a missing `http_ratelimit` entry point, validates Cloudflare's
-response, and refuses to overwrite any existing or different ruleset.
+Provision this rule **once**, before the first deployment. Before continuing, confirm all of these:
+
+- the production domain is an active Cloudflare zone on the **Free** plan;
+- the permanent Zone ID and `Zone WAF Read` token are already stored in `secrets.yml` as described above;
+- the checkout is a reviewed `main` commit, and `node --version` matches `.tool-versions`; and
+- nobody has manually created a rate-limit rule for the zone.
+
+Do not build the rule manually in the dashboard: the audit depends on the committed stable rule `ref`, and
+the provisioning script supplies the exact API representation. The script has no npm dependencies and
+uses Node's built-in `fetch`. Its behavior is intentionally narrow:
+
+1. require the explicit `--apply` option and validate only the shape of the Zone ID and write token;
+2. `GET` the fixed Cloudflare `http_ratelimit` entry-point endpoint for that zone;
+3. if it is absent (`404`), `POST` the exact committed `ops/cloudflare/rate-limit-policy.json` rule;
+4. if it exists, validate it and exit successfully only when it already matches; and
+5. refuse every mismatch. It never sends `PUT`, `PATCH`, or `DELETE`, never overwrites a rule, and never
+   prints the token, Zone ID, authorization header, or Cloudflare response body.
 
 Create a separate, temporary API token:
 
@@ -327,6 +362,7 @@ Create a separate, temporary API token:
 From the repository root, enter both values at hidden/non-history prompts and explicitly apply the policy:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 read -rsp "Cloudflare Zone ID: " CLOUDFLARE_ZONE_ID
 printf '\n'
 read -rsp "Temporary Zone WAF write token: " CLOUDFLARE_RULESETS_WRITE_TOKEN
@@ -337,34 +373,49 @@ unset CLOUDFLARE_RULESETS_WRITE_TOKEN CLOUDFLARE_ZONE_ID
 ```
 
 Expect `Cloudflare Free-plan rate-limit policy created`. If it reports `already-configured`, the deployed
-rule already matches exactly. Any other result is a hard stop; the script intentionally will not replace an
-unknown rule. Do not put the temporary write token in `secrets.yml`, an Ansible variable, shell history,
-chat, or Git.
+rule already matches exactly. Any other result is a hard stop. Do not put the temporary write token in
+`secrets.yml`, an Ansible variable, shell history, chat, or Git.
 
-Immediately revoke the temporary write token in **My Profile** → **API Tokens**. Keep the distinct
-read-only `Zone WAF Read` token in `secrets.yml`; routine deployment needs only that token. Cloudflare
-documents the 404-then-create flow for a missing phase entry point in its
-[rate-limit API procedure](https://developers.cloudflare.com/waf/rate-limiting-rules/create-api/).
+Independently verify the result with the permanent read-only token—the same capability routine deployments
+will use. Re-entering both values at hidden prompts makes this check self-contained and keeps them out of
+shell history:
 
-### Store the Cloudflare values
-
-Store all three values only in the gitignored, operator-local `ops/group_vars/all/secrets.yml`:
-
-```yaml
-cloudflare_tunnel_token: "eyJ..."
-cloudflare_zone_id: "0123456789abcdef0123456789abcdef"
-cloudflare_rulesets_read_token: "read-only-zone-rulesets-token"
+```bash
+cd "$(git rev-parse --show-toplevel)"
+read -rsp "Cloudflare Zone ID: " CLOUDFLARE_ZONE_ID
+printf '\n'
+read -rsp "Permanent Zone WAF read token: " CLOUDFLARE_RULESETS_READ_TOKEN
+printf '\n'
+export CLOUDFLARE_ZONE_ID CLOUDFLARE_RULESETS_READ_TOKEN
+node ops/cloudflare/audit-rate-limit-policy.mjs
+unset CLOUDFLARE_RULESETS_READ_TOKEN CLOUDFLARE_ZONE_ID
 ```
 
-Edit the file directly with a local editor; never put the real token in a shell command, command-line
-environment assignment, chat, issue, screenshot, workflow secret, or commit. If the file is plaintext,
-keep it mode `0600`; if it is Vault-encrypted, use `ansible-vault edit` rather than decrypting it beside the
-repository. The release workflow does not need any Cloudflare credential.
+Expect exactly `Cloudflare Free-plan rate-limit policy passed rules=1`. Only after that independent check
+passes, revoke the temporary write token in **My Profile** → **API Tokens**. Confirm it is no longer listed
+as active. Keep the distinct read-only token in `secrets.yml`; routine deployment needs only that token.
+Cloudflare documents the 404-then-create flow for a missing phase entry point in its
+[rate-limit API procedure](https://developers.cloudflare.com/waf/rate-limiting-rules/create-api/).
 
-The deploy first validates the values and calls the exact read-only
-`/zones/{zone_id}/rulesets/phases/http_ratelimit/entrypoint` endpoint. This happens before the running app
-is replaced. If a token is exposed, revoke it in Cloudflare, create another token with the same narrow
-scope, and replace only `cloudflare_rulesets_read_token` in the local secrets file.
+Failure handling is deliberately conservative:
+
+- A path containing `/ops/ops/cloudflare/` means the command was run from `ops/`; return to the repository
+  root and use the command exactly as shown.
+- `already exists but differs` means the Free plan's one rule is occupied. Inspect **Security → Security
+  rules → Rate limiting rules** and identify its owner; do not delete or replace it blindly.
+- `created a ruleset that does not match` may mean the creation succeeded but Cloudflare normalized a new
+  field. Do not retry, delete, or recreate it. Run the read-only audit, retain only its fixed error message
+  and the repository commit ID, and request review without sharing either token or the Zone ID.
+- An access rejection means the token, permission, resource scope, or Zone ID is wrong. Correct the narrow
+  token instead of granting broader account access.
+
+The Free-plan rule setup is complete only when every item below is true:
+
+- [ ] the Zone ID and permanent read-only token are stored in mode-`0600` or Vault-encrypted `secrets.yml`;
+- [ ] the provisioner returned `created` or `already-configured`;
+- [ ] the independent read-only audit returned `passed rules=1`;
+- [ ] the temporary `Zone WAF Edit` token was revoked; and
+- [ ] no write-capable Cloudflare credential exists in Git, GitHub, Ansible, or the VPS.
 
 Do not run Cloudflare's host installer; Compose runs the independently built and attested tunnel image.
 After the first connector is healthy, publish an application route:
