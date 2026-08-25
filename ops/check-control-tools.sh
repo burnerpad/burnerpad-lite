@@ -5,11 +5,32 @@
 set -euo pipefail
 
 failures=0
+script_dir=${BASH_SOURCE[0]%/*}
+
+if [ "$script_dir" = "${BASH_SOURCE[0]}" ]; then
+  script_dir=.
+fi
+
+script_dir=$(CDPATH='' cd -- "$script_dir" && pwd)
+expected_node_version=
+
+while read -r tool version; do
+  if [ "$tool" = nodejs ]; then
+    expected_node_version=$version
+    break
+  fi
+done < "$script_dir/../.tool-versions"
 
 report_failure() {
   printf 'ERROR: %s\n' "$1" >&2
   failures=$((failures + 1))
 }
+
+if ! command -v node >/dev/null 2>&1; then
+  report_failure 'node is required on the control machine; install the version pinned in .tool-versions.'
+elif [ "$(node --version 2>/dev/null)" != "v$expected_node_version" ]; then
+  report_failure "node must match .tool-versions exactly (expected v$expected_node_version)."
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   report_failure 'docker is required on the control machine; follow DEPLOYMENT.md → Prepare the repository and laptop.'
