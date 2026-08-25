@@ -16,8 +16,7 @@
 - name: Require artifact-verification tools on the control machine
   delegate_to: localhost
   become: false
-  ansible.builtin.command: "{{ item }} version"
-  loop: [docker, cosign, gh]
+  ansible.builtin.command: "{{ playbook_dir }}/check-control-tools.sh"
   changed_when: false
 
 - name: Pull the release images by full-SHA discovery tag
@@ -82,16 +81,34 @@
   loop: ["{{ app_image }}", "{{ cloudflared_image }}"]
   changed_when: false
 
-- name: Audit the deployed Cloudflare health and static rate limits
+- name: Audit the deployed Cloudflare Free-plan rate limit
   delegate_to: localhost
   become: false
   ansible.builtin.command: node "{{ playbook_dir }}/cloudflare/audit-rate-limit-policy.mjs"
   environment:
-    BURNERPAD_BASE_URL: "{{ public_origin }}"
     CLOUDFLARE_ZONE_ID: "{{ cloudflare_zone_id }}"
     CLOUDFLARE_RULESETS_READ_TOKEN: "{{ cloudflare_rulesets_read_token }}"
+  register: _cloudflare_rate_limit_audit
   changed_when: false
+  failed_when: false
   no_log: true
+
+- name: Refuse deployment when the Cloudflare rate-limit audit failed
+  ansible.builtin.fail:
+    msg: >-
+      {{
+        {
+          2: 'Cloudflare rate-limit audit has invalid local configuration.',
+          10: 'Cloudflare has no http_ratelimit ruleset. Complete the one-time Free-plan provisioning procedure.',
+          11: 'Cloudflare rejected the Zone ID or read-only Zone WAF token.',
+          12: 'Cloudflare Rulesets API was unavailable or returned an invalid result.',
+          20: 'The deployed Cloudflare rate-limit rule differs from the committed policy.'
+        }.get(
+          _cloudflare_rate_limit_audit.rc | int,
+          'Cloudflare rate-limit audit failed unexpectedly.'
+        )
+      }}
+  when: _cloudflare_rate_limit_audit.rc | int != 0
 
 - name: Ensure the remote dir (the root-only runtime env remains the deliberate exception)
   ansible.builtin.file:

@@ -58,7 +58,8 @@ launch, and see [`.github/REPOSITORY_SETTINGS.md`](.github/REPOSITORY_SETTINGS.m
 As verified on 2026-08-23, the [Healthchecks.io pricing page](https://healthchecks.io/pricing/) lists a free
 20-job Hobbyist plan and the [UptimeRobot pricing page](https://uptimerobot.com/pricing/) lists a free
 50-monitor plan with five-minute checks. Those limits and terms can change, so verify them when creating
-the checks. Neither service is a durability service.
+the checks. Neither service is a durability service. The committed edge-rate policy deliberately uses the
+single rule included with Cloudflare Free; do not upgrade a Cloudflare plan solely to satisfy this runbook.
 
 ## Required accounts and control planes
 
@@ -68,7 +69,7 @@ Use MFA/passkeys and recovery codes on all four:
 |---|---|---|
 | GitHub | source, CI, public GHCR, attestations, scheduled synthetic | public repository and packages |
 | VPS provider | Ubuntu 24.04 LTS host and provider-console break-glass | fresh 2 GB+ VM, bootstrap password |
-| Cloudflare | TLS, WAF/rate limits, and outbound Tunnel ingress | zone, named tunnel, tunnel token |
+| Cloudflare Free | TLS, one WAF rate-limit rule, and outbound Tunnel ingress | zone, named tunnel, tunnel token |
 | Tailscale | sole administrative network | tagged one-use auth key and restrictive grants |
 
 The project assumes one tailnet user: the founder/operator. Do not grant the VPS access to other tailnet
@@ -80,19 +81,56 @@ no` policy. The VPS provider console is the break-glass path.
 
 Install Docker with buildx, Ansible, `sshpass`, `cosign`, and the GitHub CLI. The public smoke checks use
 the exact Node version in `.tool-versions` (currently 24.19.0); CI also reads its Elixir, Erlang, and Node
-versions from that one file. Authenticate `gh` to the public repository so it can verify attestations.
+versions from that one file.
+
+On an x86-64 Ubuntu control machine, do not install `gh` from Ubuntu 26.04's default repository: its
+2.46.0 package predates the required `gh attestation verify` command. Install these checksum-pinned
+upstream packages instead (versions and asset digests verified against their official GitHub releases on
+2026-08-25):
+
+```bash
+bp_tools_dir=$(mktemp -d)
+
+curl --fail --location --output "$bp_tools_dir/gh.deb" \
+  https://github.com/cli/cli/releases/download/v2.98.0/gh_2.98.0_linux_amd64.deb
+printf '%s  %s\n' \
+  f65a3fa2fa0eb2e97c445ee3f5e087a40aae03b64847f45a8f13805e504535d6 \
+  "$bp_tools_dir/gh.deb" | sha256sum --check
+
+curl --fail --location --output "$bp_tools_dir/cosign.deb" \
+  https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign_3.1.3_amd64.deb
+printf '%s  %s\n' \
+  75357d96161da4d06d37c4b2831fa6978483cdce661999e5951b586f9ee1d710 \
+  "$bp_tools_dir/cosign.deb" | sha256sum --check
+
+sudo dpkg --install "$bp_tools_dir/gh.deb" "$bp_tools_dir/cosign.deb"
+find "$bp_tools_dir" -depth -delete
+```
+
+The package sources and alternative platform instructions are maintained by
+[GitHub CLI](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) and
+[Sigstore Cosign](https://docs.sigstore.dev/cosign/system_config/installation/).
+
 Clone recursively and enable the secret guard:
 
 ```bash
 git clone --recurse-submodules https://github.com/burnerpad/burnerpad-lite
 cd burnerpad-lite
 git config core.hooksPath .githooks
+gh auth login --hostname github.com --web
+ops/check-control-tools.sh
 
 cd ops
 ./install-requirements-locked.sh
 cp inventory.example.ini inventory.ini
 install -m 600 group_vars/all/secrets.example.yml group_vars/all/secrets.yml
 ```
+
+The fail-fast check requires a reachable Docker daemon, a runnable Cosign, a GitHub CLI that provides
+`gh attestation verify`, and an authenticated GitHub.com session. It prints no authentication material.
+Before committing any deployment change, follow
+[`CONTRIBUTING.md` → Signed commits and DCO](CONTRIBUTING.md#signed-commits-and-dco): review staged paths,
+use `git commit -S -s`, verify locally, and confirm GitHub marks every pull-request commit **Verified**.
 
 Create `secrets.yml` only once. If it already exists, edit it in place—do not copy the example over it or
 you will overwrite working credentials. Fill every field in that local file before its corresponding
@@ -266,9 +304,10 @@ deployment; see Cloudflare's
 Do not broaden the permission if the audit returns an error—first verify that the token is active, scoped
 to the correct zone, and that the copied Zone ID is the ID for that same domain.
 
-### Store the Cloudflare values
+### Store the permanent Cloudflare values
 
-Store all three values only in the gitignored, operator-local `ops/group_vars/all/secrets.yml`:
+Before creating the temporary write token, store the Tunnel token, Zone ID, and newly displayed read-only
+token in the gitignored, operator-local `ops/group_vars/all/secrets.yml`:
 
 ```yaml
 cloudflare_tunnel_token: "eyJ..."
@@ -276,15 +315,107 @@ cloudflare_zone_id: "0123456789abcdef0123456789abcdef"
 cloudflare_rulesets_read_token: "read-only-zone-rulesets-token"
 ```
 
-Edit the file directly with a local editor; never put the real token in a shell command, command-line
-environment assignment, chat, issue, screenshot, workflow secret, or commit. If the file is plaintext,
-keep it mode `0600`; if it is Vault-encrypted, use `ansible-vault edit` rather than decrypting it beside the
-repository. The release workflow does not need any Cloudflare credential.
+The Zone WAF **Edit** token used in the next subsection is temporary and must never be added to this file.
+Edit `secrets.yml` directly with a local editor; never put a real token in a shell command, chat, issue,
+screenshot, workflow secret, or commit. If the file is plaintext, keep it mode `0600`; if it is
+Vault-encrypted, use `ansible-vault edit` rather than decrypting it beside the repository. The release
+workflow does not need any Cloudflare credential.
 
-The deploy first validates the values and calls the exact read-only
-`/zones/{zone_id}/rulesets/phases/http_ratelimit/entrypoint` endpoint. This happens before the running app
-is replaced. If a token is exposed, revoke it in Cloudflare, create another token with the same narrow
-scope, and replace only `cloudflare_rulesets_read_token` in the local secrets file.
+The deploy validates these permanent values and calls the exact read-only
+`/zones/{zone_id}/rulesets/phases/http_ratelimit/entrypoint` endpoint before replacing the running app. If
+the read-only token is exposed, revoke it, create another token with the same narrow scope, and replace only
+`cloudflare_rulesets_read_token` in the local secrets file.
+
+### Provision the one Free-plan rate-limit rule
+
+Cloudflare Free permits one rate-limit rule, only Path and Verified Bot in its matching expression,
+per-IP counting, and 10-second counting and mitigation periods. The committed policy combines health,
+readiness, crypto, and font paths into that one allowance. These limits are documented in Cloudflare's
+[rate-limiting availability table](https://developers.cloudflare.com/waf/rate-limiting-rules/#availability).
+
+Provision this rule **once**, before the first deployment. Before continuing, confirm all of these:
+
+- the production domain is an active Cloudflare zone on the **Free** plan;
+- the permanent Zone ID and `Zone WAF Read` token are already stored in `secrets.yml` as described above;
+- the checkout is a reviewed `main` commit, and `node --version` matches `.tool-versions`; and
+- nobody has manually created a rate-limit rule for the zone.
+
+Do not build the rule manually in the dashboard: the audit depends on the committed stable rule `ref`, and
+the provisioning script supplies the exact API representation. The script has no npm dependencies and
+uses Node's built-in `fetch`. Its behavior is intentionally narrow:
+
+1. require the explicit `--apply` option and validate only the shape of the Zone ID and write token;
+2. `GET` the fixed Cloudflare `http_ratelimit` entry-point endpoint for that zone;
+3. if it is absent (`404`), `POST` the exact committed `ops/cloudflare/rate-limit-policy.json` rule;
+4. if it exists, validate it and exit successfully only when it already matches; and
+5. refuse every mismatch. It never sends `PUT`, `PATCH`, or `DELETE`, never overwrites a rule, and never
+   prints the token, Zone ID, authorization header, or Cloudflare response body.
+
+Create a separate, temporary API token:
+
+1. Open **My Profile** → **API Tokens** → **Create Token** → **Create Custom Token**.
+2. Name it `Burnerpad one-time rate-limit provisioning`.
+3. Add exactly **Zone → Zone WAF → Edit**.
+4. Include only **Specific zone** → the production domain.
+5. Confirm that no account, DNS, Tunnel, or other permission is present; create and copy the token.
+
+From the repository root, enter both values at hidden/non-history prompts and explicitly apply the policy:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+read -rsp "Cloudflare Zone ID: " CLOUDFLARE_ZONE_ID
+printf '\n'
+read -rsp "Temporary Zone WAF write token: " CLOUDFLARE_RULESETS_WRITE_TOKEN
+printf '\n'
+export CLOUDFLARE_ZONE_ID CLOUDFLARE_RULESETS_WRITE_TOKEN
+node ops/cloudflare/provision-rate-limit-policy.mjs --apply
+unset CLOUDFLARE_RULESETS_WRITE_TOKEN CLOUDFLARE_ZONE_ID
+```
+
+Expect `Cloudflare Free-plan rate-limit policy created`. If it reports `already-configured`, the deployed
+rule already matches exactly. Any other result is a hard stop. Do not put the temporary write token in
+`secrets.yml`, an Ansible variable, shell history, chat, or Git.
+
+Independently verify the result with the permanent read-only token—the same capability routine deployments
+will use. Re-entering both values at hidden prompts makes this check self-contained and keeps them out of
+shell history:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+read -rsp "Cloudflare Zone ID: " CLOUDFLARE_ZONE_ID
+printf '\n'
+read -rsp "Permanent Zone WAF read token: " CLOUDFLARE_RULESETS_READ_TOKEN
+printf '\n'
+export CLOUDFLARE_ZONE_ID CLOUDFLARE_RULESETS_READ_TOKEN
+node ops/cloudflare/audit-rate-limit-policy.mjs
+unset CLOUDFLARE_RULESETS_READ_TOKEN CLOUDFLARE_ZONE_ID
+```
+
+Expect exactly `Cloudflare Free-plan rate-limit policy passed rules=1`. Only after that independent check
+passes, revoke the temporary write token in **My Profile** → **API Tokens**. Confirm it is no longer listed
+as active. Keep the distinct read-only token in `secrets.yml`; routine deployment needs only that token.
+Cloudflare documents the 404-then-create flow for a missing phase entry point in its
+[rate-limit API procedure](https://developers.cloudflare.com/waf/rate-limiting-rules/create-api/).
+
+Failure handling is deliberately conservative:
+
+- A path containing `/ops/ops/cloudflare/` means the command was run from `ops/`; return to the repository
+  root and use the command exactly as shown.
+- `already exists but differs` means the Free plan's one rule is occupied. Inspect **Security → Security
+  rules → Rate limiting rules** and identify its owner; do not delete or replace it blindly.
+- `created a ruleset that does not match` may mean the creation succeeded but Cloudflare normalized a new
+  field. Do not retry, delete, or recreate it. Run the read-only audit, retain only its fixed error message
+  and the repository commit ID, and request review without sharing either token or the Zone ID.
+- An access rejection means the token, permission, resource scope, or Zone ID is wrong. Correct the narrow
+  token instead of granting broader account access.
+
+The Free-plan rule setup is complete only when every item below is true:
+
+- [ ] the Zone ID and permanent read-only token are stored in mode-`0600` or Vault-encrypted `secrets.yml`;
+- [ ] the provisioner returned `created` or `already-configured`;
+- [ ] the independent read-only audit returned `passed rules=1`;
+- [ ] the temporary `Zone WAF Edit` token was revoked; and
+- [ ] no write-capable Cloudflare credential exists in Git, GitHub, Ansible, or the VPS.
 
 Do not run Cloudflare's host installer; Compose runs the independently built and attested tunnel image.
 After the first connector is healthy, publish an application route:
@@ -301,8 +432,8 @@ Apply every setting in [`ops/CLOUDFLARE_PROFILE.md`](ops/CLOUDFLARE_PROFILE.md).
 - preserve the application's domain-wide HSTS `includeSubDomains; preload` contract;
 - never cache HTML, API, reveal, create, stats, health, or capability paths;
 - static `/crypto/*` and `/fonts/*` may be cached only with exact byte preservation;
-- apply both exact `http_ratelimit` rules in `ops/cloudflare/rate-limit-policy.json`; the deploy play audits
-  them before replacing the running application;
+- provision the one exact Free-plan `http_ratelimit` rule in `ops/cloudflare/rate-limit-policy.json`; the
+  deploy play audits it before replacing the running application;
 - disable Rocket Loader, Auto Minify, email rewriting, HTML/JS transforms, and response-body modification;
 - do not enable Logpush/Logpull for this zone; Cloudflare metadata can include client IP plus a secret-ID
   URL, so use the shortest suitable retention.
@@ -431,11 +562,12 @@ public `sha-<HEAD>` app/tunnel images. It then:
 1. pulls the full-SHA discovery tags and resolves their exact registry digests;
 2. requires both OCI revision labels to equal `HEAD`;
 3. verifies keyless Sigstore signatures and GitHub build-provenance attestations;
-4. generates a new runtime-only Erlang cookie and renders root-owned, mode-`0600` runtime configuration;
-5. reads `/api/stats`; if any resident ciphertext exists, requires literal `DESTROY`;
-6. starts digest-pinned, read-only, cap-dropped, CPU/memory/PID-bounded containers and waits for `/readyz`;
-7. verifies the reported full revision and app image digest;
-8. runs the public edge contract and create/claim/decrypt canary from the laptop.
+4. audits the exact Cloudflare Free-plan rate-limit rule with the read-only token;
+5. generates a new runtime-only Erlang cookie and renders root-owned, mode-`0600` runtime configuration;
+6. reads `/api/stats`; if any resident ciphertext exists, requires literal `DESTROY`;
+7. starts digest-pinned, read-only, cap-dropped, CPU/memory/PID-bounded containers and waits for `/readyz`;
+8. verifies the reported full revision and app image digest;
+9. runs the public edge contract and create/claim/decrypt canary from the laptop.
 
 The full-SHA tag is used only to locate the two GHCR artifacts. The root-owned, mode-`0600` `.env` and the
 non-secret Compose template together resolve their immutable digest references, the app image digest exposed
@@ -444,7 +576,7 @@ and the tunnel token. The app receives an explicit environment allowlist and nev
 token. The release cookie created by `mix release` is removed from the public image, so every deployment has
 a different runtime credential.
 
-After all eight steps pass, update the scheduled canary's expected release:
+After all nine steps pass, update the scheduled canary's expected release:
 
 ```bash
 gh variable set BURNERPAD_PRODUCTION_REVISION --body "$(git rev-parse HEAD)"
