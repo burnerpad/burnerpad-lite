@@ -94,6 +94,18 @@ cp inventory.example.ini inventory.ini
 install -m 600 group_vars/all/secrets.example.yml group_vars/all/secrets.yml
 ```
 
+Create `secrets.yml` only once. If it already exists, edit it in place—do not copy the example over it or
+you will overwrite working credentials. Fill every field in that local file before its corresponding
+step. It deliberately contains two kinds of deployment input:
+
+- capability-bearing secrets: the Tunnel and Rulesets tokens, Tailscale key, and heartbeat URL; and
+- public but instance-specific metadata: the legal operator, contact addresses, jurisdiction, policy URL,
+  and public origin.
+
+The second group is local not because it is confidential, but because committing one operator's identity
+would let a fork accidentally deploy under that operator's name. The public OCI image contains neither
+group; Ansible supplies them to the container at runtime.
+
 `install-requirements-locked.sh` downloads each direct and transitive Galaxy input once, rejects any
 missing, extra, or checksum-mismatched archive, and installs only those verified local archives with
 dependency resolution disabled. It stages a complete fresh dependency tree before replacing the generated
@@ -207,15 +219,72 @@ does not reuse it. Review the actual policy in the Tailscale admin UI before boo
 
 ## Configure Cloudflare
 
-Create a named Cloudflare Tunnel. Also create a separate read-only Rulesets API token scoped to the
-production zone; it lets routine deployment fail closed if the required health/static protection drifts.
-Store these values only in the gitignored secrets file:
+Create a named Cloudflare Tunnel. The deployment needs three distinct Cloudflare values; do not confuse or
+reuse them:
+
+- the **Tunnel token** authenticates the `cloudflared` connector;
+- the **Zone ID** identifies the one production domain to audit; and
+- a dedicated **read-only Rulesets API token** lets routine deployment detect rate-limit policy drift.
+
+The Rulesets token is not a Tunnel token, Global API Key, Origin CA key, or general-purpose account token.
+It is deliberately unable to edit the zone.
+
+### Obtain the production Zone ID
+
+1. Sign in to the [Cloudflare dashboard](https://dash.cloudflare.com/).
+2. Open **Domains** and select the production domain (`burnerpad.io` for the official deployment).
+3. On the domain's **Overview** page, scroll to the **API** section.
+4. Copy **Zone ID**. Do not copy the adjacent Account ID.
+
+Cloudflare also documents this path in
+[Find account and zone IDs](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/).
+The deploy preflight requires the Zone ID's exact 32-character lowercase hexadecimal form.
+
+### Create the read-only Rulesets audit token
+
+1. In the Cloudflare dashboard, open **My Profile** → **API Tokens**.
+2. Select **Create Token**, then **Create Custom Token**. Do not use **Read All Resources**.
+3. Give it a purpose-specific name such as `Burnerpad deployment ruleset audit`.
+4. Add exactly this permission:
+
+   | Scope | Permission | Access |
+   |---|---|---|
+   | Zone | Zone WAF | Read |
+
+5. Under **Zone Resources**, select **Include** → **Specific zone** → the production domain. Do not grant
+   access to all zones.
+6. Leave account-level, DNS, Tunnel, and write/edit permissions absent. Add an expiry or client-IP filter
+   only when there is an operational plan to rotate the token before expiry and the operator has stable
+   egress; otherwise either restriction can unexpectedly block a deployment.
+7. Select **Continue to summary**, verify the one-zone/read-only scope, and select **Create Token**.
+8. Copy the token immediately. Cloudflare displays the secret only once.
+
+Cloudflare's [token creation guide](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)
+documents the dashboard flow. `Zone WAF Read` is sufficient for the Rulesets entry-point GET used by the
+deployment; see Cloudflare's
+[zone custom-ruleset API documentation](https://developers.cloudflare.com/waf/custom-rules/custom-rulesets/).
+Do not broaden the permission if the audit returns an error—first verify that the token is active, scoped
+to the correct zone, and that the copied Zone ID is the ID for that same domain.
+
+### Store the Cloudflare values
+
+Store all three values only in the gitignored, operator-local `ops/group_vars/all/secrets.yml`:
 
 ```yaml
 cloudflare_tunnel_token: "eyJ..."
 cloudflare_zone_id: "0123456789abcdef0123456789abcdef"
 cloudflare_rulesets_read_token: "read-only-zone-rulesets-token"
 ```
+
+Edit the file directly with a local editor; never put the real token in a shell command, command-line
+environment assignment, chat, issue, screenshot, workflow secret, or commit. If the file is plaintext,
+keep it mode `0600`; if it is Vault-encrypted, use `ansible-vault edit` rather than decrypting it beside the
+repository. The release workflow does not need any Cloudflare credential.
+
+The deploy first validates the values and calls the exact read-only
+`/zones/{zone_id}/rulesets/phases/http_ratelimit/entrypoint` endpoint. This happens before the running app
+is replaced. If a token is exposed, revoke it in Cloudflare, create another token with the same narrow
+scope, and replace only `cloudflare_rulesets_read_token` in the local secrets file.
 
 Do not run Cloudflare's host installer; Compose runs the independently built and attested tunnel image.
 After the first connector is healthy, publish an application route:
@@ -245,20 +314,28 @@ with a forged `CF-Connecting-IP`, and never prints or returns either address.
 
 ## Configure identity and capacity
 
-Edit committed `ops/group_vars/all/vars.yml`; every shipped value is intentionally invalid until replaced:
+Add the public identity for this one deployment to the existing gitignored
+`ops/group_vars/all/secrets.yml`. For the official `burnerpad.io` service, the block is:
 
 ```yaml
-operator_name: "Your legal operator"
-abuse_email: "abuse@your-domain.example"
-jurisdiction: "Your jurisdiction"
-security_email: "security@your-domain.example"
-security_policy_url: "https://your-domain.example/security-policy"
-public_origin: "https://burnerpad.your-domain.example"
+operator_name: "Impulsa SLU"
+abuse_email: "abuse@burnerpad.io"
+jurisdiction: "Andorra"
+security_email: "security@burnerpad.io"
+security_policy_url: "https://github.com/burnerpad/burnerpad-lite/blob/main/SECURITY.md"
+public_origin: "https://burnerpad.io"
 ```
 
-Size `MAX_SECRETS`, byte budget, row budget, memory, and CPU together. The payload floor is roughly
+These values remain runtime configuration. They are not Docker build arguments, labels, or files copied
+into the image. Another operator can pull the same immutable image and supply its own values through these
+environment-variable names; an operator using this Ansible deployment changes only its local
+`secrets.yml`.
+
+Edit committed `ops/group_vars/all/vars.yml` only when changing reusable capacity or host defaults. Size
+`MAX_SECRETS`, byte budget, row budget, memory, and CPU together. The payload floor is roughly
 `MAX_SECRETS × 64 KiB`, before BEAM/ETS overhead; leave material RAM for the OS and tunnel. The default
 10,000 rows / 1,500 MB app cap is intended for a 2 GB host, with a 2% per-source byte and row ceiling.
+
 For larger hosts, use the measured 4/8/12/16 GiB starting points and caveats in
 [`docs/CAPACITY_PLANNING.md`](docs/CAPACITY_PLANNING.md), then rerun its constrained matrix on the intended
 VPS provider before raising the limit.
@@ -270,9 +347,11 @@ The generated Compose environment currently overrides `MAX_SECRETS`, `GLOBAL_CRE
 greater than `MAX_SECRETS × 64 KiB`, and row budget no greater than `MAX_SECRETS`. Do not use `0` to mean
 unlimited: invalid or out-of-range production configuration refuses to boot.
 
-Replace every operator placeholder and have the rendered Terms/Acceptable-Use wording and linked security
-policy reviewed for the actual operator and jurisdiction before launch. The production image refuses the
-shipped `.invalid`/`CHANGE_ME` identity values; that technical check is not legal review.
+Replace every operator placeholder in the local `secrets.yml` and have the rendered
+Terms/Acceptable-Use wording and linked security policy reviewed for the actual operator and jurisdiction
+before launch. The deployment preflight names an invalid public field without printing any value. Each
+capability task identifies its field but keeps the value fully censored. The production image independently
+refuses `.invalid`/`CHANGE_ME` identity values; those technical checks are not legal review.
 
 The production app also requires a full source SHA, exact OCI digest, and a runtime Erlang cookie. Do not
 put those in inventory: the release/deploy process derives the first two and generates a fresh cookie on

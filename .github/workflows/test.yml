@@ -196,6 +196,8 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check ansible-core==2.21.3
       - name: Deployment generates private, unique runtime credentials
         run: test/ci/runtime_credentials_test.sh
+      - name: Deployment rejects missing or placeholder production configuration
+        run: test/ci/deployment_configuration_test.sh
       - name: Verify and install pinned Galaxy inputs
         working-directory: ops
         run: ./install-requirements-locked.sh
@@ -261,6 +263,7 @@ jobs:
           test/ci/dco_test.sh
           test/load/run_capacity_profile.sh test/load/run_capacity_matrix.sh
           test/ci/compose_project_identity_test.sh test/ci/install_requirements_locked_test.sh
+          test/ci/deployment_configuration_test.sh
           test/ci/reconcile_durable_issue_test.sh test/ci/runtime_credentials_test.sh
           test/ci/source_release_test.sh
           /rendered/bp-diag.sh /rendered/bp-prune-images.sh
