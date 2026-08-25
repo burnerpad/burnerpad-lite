@@ -493,6 +493,27 @@ every deployment.
 stable identity used by existing-container discovery, every Compose command, monitoring, compliance, and
 deployment. Changing `remote_dir` therefore cannot bypass resident-row discovery or the `DESTROY` prompt.
 
+The isolated `backend` bridge defaults to `172.29.0.0/29`. This intentionally differs from the pre-1.0
+`burnerpad_internal` bridge (`172.28.0.0/16`), allowing the first v1 deployment to create its hardened
+replacement while the legacy containers are still running. Before rendering or replacing anything, the
+deploy play compares the planned CIDR with every Docker IPAM allocation and permits overlap only with the
+exact `backend` network already owned by the same Compose project. If it reports a conflict on an unusual
+host, inspect the allocated ranges on the VPS:
+
+```bash
+docker network inspect $(docker network ls -q) \
+  --format '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}'
+```
+
+Then add an unused canonical RFC 1918 CIDR, preferably a `/29`, to the gitignored local `secrets.yml`:
+
+```yaml
+backend_subnet_override: "172.30.0.0/29"
+```
+
+Do not choose a range contained by—or containing—an existing allocation. The same validated value configures
+both Docker IPAM and the app's `TRUSTED_PROXIES`; never widen the latter independently.
+
 ## Runtime properties the deployment must preserve
 
 The generated deployment is part of the security contract. After any Compose, network, image, or host-role
@@ -502,7 +523,7 @@ change, verify all of these remain true:
 |---|---|
 | Process | App and tunnel run non-root with read-only roots, all Linux capabilities dropped, `no-new-privileges`, PID/CPU/memory limits, and core dumps disabled. |
 | Memory | App scratch space is a bounded `/tmp` tmpfs; the memory-plus-swap limit equals the memory limit and host swap is disabled, so ciphertext and credentials are not intentionally paged to disk. |
-| Network | Nothing is published on the host. The app joins only the internal `backend` network; cloudflared alone also joins `egress` and dials Cloudflare. UFW denies inbound traffic except the Tailscale interface. |
+| Network | Nothing is published on the host. The app joins only the validated private `/16`–`/29` internal `backend` network; cloudflared alone also joins `egress` and dials Cloudflare. UFW denies inbound traffic except the Tailscale interface. |
 | BEAM | EPMD/distribution bind to loopback, the image contains no release cookie, and Ansible supplies a fresh strong runtime cookie on every deployment. |
 | HTTP | HTTP/2 and WebSockets remain disabled because the service uses neither. GET/HEAD `/healthz` is liveness; GET/HEAD `/readyz` checks Store/Abuse processes and ETS tables and drives container readiness. Mutation methods are rejected. |
 | Edge identity | Only the dedicated Compose bridge CIDR may supply `CF-Connecting-IP`; the public baseline-and-forgery probe must pass after every tunnel/network change. |
@@ -564,7 +585,8 @@ public `sha-<HEAD>` app/tunnel images. It then:
 2. requires both OCI revision labels to equal `HEAD`;
 3. verifies keyless Sigstore signatures and GitHub build-provenance attestations;
 4. audits the exact Cloudflare Free-plan rate-limit rule with the read-only token;
-5. generates a new runtime-only Erlang cookie and renders root-owned, mode-`0600` runtime configuration;
+5. rejects a backend CIDR that overlaps another Docker allocation, then generates a new runtime-only Erlang
+   cookie and renders root-owned, mode-`0600` runtime configuration;
 6. reads `/api/stats` and accepts the legacy `stored` name only for upgrading a pre-1.0 release; if any
    resident ciphertext exists, requires literal `DESTROY`;
 7. starts digest-pinned, read-only, cap-dropped, CPU/memory/PID-bounded containers and waits for `/readyz`;

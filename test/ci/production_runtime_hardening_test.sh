@@ -62,6 +62,27 @@ compose up -d --no-deps app >/dev/null
 container_id=$(compose ps -q app)
 test -n "$container_id" || fail "Compose did not create the app container"
 
+# The JavaScript process, not this shell, expands its template literal.
+# shellcheck disable=SC2016
+network_plan=$(compose config --format json | node -e '
+  let input = "";
+  process.stdin.on("data", (chunk) => { input += chunk; });
+  process.stdin.on("end", () => {
+    const config = JSON.parse(input);
+    process.stdout.write(`${config.networks.backend.name} ${config.networks.backend.ipam.config[0].subnet}`);
+  });
+')
+read -r backend_network backend_subnet <<< "$network_plan"
+test -n "$backend_network" && test -n "$backend_subnet" || fail "backend network plan is incomplete"
+
+allocated_backend_subnet=$(docker network inspect --format '{{(index .IPAM.Config 0).Subnet}}' "$backend_network")
+trusted_proxy_subnet=$(
+  docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" |
+    sed -n 's/^TRUSTED_PROXIES=//p'
+)
+test "$allocated_backend_subnet" = "$backend_subnet" || fail "Docker allocated an unexpected backend subnet"
+test "$trusted_proxy_subnet" = "$backend_subnet" || fail "TRUSTED_PROXIES drifted from the backend subnet"
+
 ready=0
 for _ in {1..30}; do
   if docker exec "$container_id" /bin/busybox wget -qO- http://127.0.0.1:4000/readyz >/dev/null 2>&1; then

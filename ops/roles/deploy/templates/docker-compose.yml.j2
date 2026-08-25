@@ -32,7 +32,7 @@ services:
       ERL_CRASH_DUMP_SECONDS: "0"           # no crash dump on disk
       PORT: "4000"
       REAL_IP_HEADER: "cf-connecting-ip"
-      TRUSTED_PROXIES: "172.28.0.0/16"      # the compose bridge (cloudflared) — M3
+      TRUSTED_PROXIES: "{{ backend_subnet }}" # exactly the isolated cloudflared bridge — M3
     healthcheck:
       test: ["CMD", "/bin/busybox", "wget", "-qO-", "http://127.0.0.1:4000/readyz"]
       interval: 30s
@@ -70,6 +70,6 @@ networks:
   backend:
     driver: bridge
     internal: true
-    ipam: { config: [{ subnet: 172.28.0.0/16 }] }
+    ipam: { config: [{ subnet: "{{ backend_subnet }}" }] }
   egress:
     driver: bridge

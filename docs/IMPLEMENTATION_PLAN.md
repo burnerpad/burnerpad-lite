@@ -115,7 +115,7 @@ every `crypto-app.js` edit (Batches 3 and 5).
   `127.0.0.1` only.
 - **M3 — trusted proxy (no nginx):** cloudflared talks to the app directly and forwards `CF-Connecting-IP`,
   so set `TRUSTED_PROXIES` to the cloudflared bridge subnet. **The ops compose template already does this**
-  (`TRUSTED_PROXIES: 172.28.0.0/16`) — this task is just to confirm the app reads it. *(No nginx config to
+  (the validated `backend_subnet` feeds `TRUSTED_PROXIES`) — this task is just to confirm the app reads it. *(No nginx config to
   change; nginx is dropped in Part B.)*
 - **L9 — container hardening:** applied by the ops compose template (`read_only`, `tmpfs [/tmp]`,
   `ERL_CRASH_DUMP_SECONDS=0`, `no-new-privileges`, `cap_drop [ALL]`, `pids_limit`, `mem_limit`, no
