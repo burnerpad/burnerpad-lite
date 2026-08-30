@@ -3,7 +3,7 @@
 # compares CLOUDFLARED_VERSION with GitHub's newest release; updates are reviewed, never silently deployed.
 ARG CLOUDFLARED_VERSION=2026.8.2
 ARG UPSTREAM_REVISION=733bfb939963e150dcf5c4faddb1603f744fbc98
-FROM golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 AS build
+FROM golang:1.27.0-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452 AS build
 
 ARG TARGETOS
 ARG TARGETARCH
