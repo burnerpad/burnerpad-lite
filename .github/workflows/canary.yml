@@ -28,7 +28,7 @@ jobs:
       - name: Verify the public edge contract
         id: edge
         env:
-          BURNERPAD_BASE_URL: ${{ vars.BURNERPAD_PUBLIC_ORIGIN || 'https://burnerpad.io' }}
+          BURNERPAD_BASE_URL: ${{ vars.BURNERPAD_PUBLIC_ORIGIN }}
           BURNERPAD_EXPECTED_REVISION: ${{ vars.BURNERPAD_PRODUCTION_REVISION }}
           BURNERPAD_REQUIRE_EXPECTED_REVISION: 'true'
         run: node ops/smoke/edge-contract.mjs
@@ -36,7 +36,7 @@ jobs:
         id: transaction
         if: ${{ always() }}
         env:
-          BURNERPAD_BASE_URL: ${{ vars.BURNERPAD_PUBLIC_ORIGIN || 'https://burnerpad.io' }}
+          BURNERPAD_BASE_URL: ${{ vars.BURNERPAD_PUBLIC_ORIGIN }}
           BURNERPAD_EXPECTED_REVISION: ${{ vars.BURNERPAD_PRODUCTION_REVISION }}
           BURNERPAD_REQUIRE_EXPECTED_REVISION: 'true'
         run: node ops/smoke/e2e-canary.mjs

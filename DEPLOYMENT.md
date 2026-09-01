@@ -232,6 +232,10 @@ Set the scheduled public canary's non-secret origin before enabling it:
 gh variable set BURNERPAD_PUBLIC_ORIGIN --body 'https://burnerpad.example'
 ```
 
+The workflow deliberately has no default origin. If this variable is missing or invalid, both public
+checks fail at the privacy-safe `configuration` stage before making an external request; a fork can never
+silently probe `burnerpad.io` or another operator's deployment.
+
 After the first successful deployment, set its independently maintained expected release:
 
 ```bash

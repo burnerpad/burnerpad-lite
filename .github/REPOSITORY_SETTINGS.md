@@ -53,7 +53,8 @@ scan attestation only after the exact published digest passes the HIGH/CRITICAL 
 ## Public canary release identity
 
 - Set the non-secret repository variable `BURNERPAD_PUBLIC_ORIGIN` to the canonical production HTTPS
-  origin, without a path or trailing slash. Forks must not rely on the burnerpad.io workflow fallback.
+  origin, without a path or trailing slash. There is deliberately no workflow fallback: a missing or
+  invalid value fails at configuration before either public check makes an external request.
 - Set the non-secret repository variable `BURNERPAD_PRODUCTION_REVISION` to the full 40-character lowercase
   Git revision currently deployed in production.
 - Update it immediately after every successful deployment or rollback. The scheduled canary fails closed
