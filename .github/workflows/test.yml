@@ -243,6 +243,7 @@ jobs:
           node --check ops/smoke/edge-contract.mjs
           node --check ops/smoke/e2e-canary.mjs
           node --check ops/smoke/html-contract.mjs
+          node --check ops/smoke/origin.mjs
           node --check ops/smoke/readiness.mjs
           node --check ops/cloudflare/audit-rate-limit-policy.mjs
           node --check ops/cloudflare/provision-rate-limit-policy.mjs
@@ -266,6 +267,7 @@ jobs:
           shellcheck .githooks/pre-commit .github/scripts/check-toolchain-pins.sh
           .github/scripts/check-clean-tree.sh .github/scripts/check-crypto-release.sh
           .github/scripts/check-dco.sh
+          .github/scripts/next-release-version.sh
           .github/scripts/package-source.sh
           .github/scripts/reconcile-durable-issue.sh
           ops/check-control-tools.sh ops/check-security-claims.sh ops/install-requirements-locked.sh
@@ -274,6 +276,7 @@ jobs:
           test/ci/production_runtime_hardening_test.sh
           test/ci/clean_tree_test.sh
           test/ci/dco_test.sh
+          test/ci/release_version_test.sh
           test/load/run_capacity_profile.sh test/load/run_capacity_matrix.sh
           test/ci/compose_project_identity_test.sh test/ci/install_requirements_locked_test.sh
           test/ci/control_tools_test.sh test/ci/deployment_configuration_test.sh
@@ -288,6 +291,8 @@ jobs:
         run: test/ci/source_release_test.sh
       - name: Test DCO policy
         run: test/ci/dco_test.sh
+      - name: Test automatic release versioning
+        run: test/ci/release_version_test.sh
       - name: Test strict clean-tree detection
         run: bash test/ci/clean_tree_test.sh
       - name: Test durable-issue reconciliation

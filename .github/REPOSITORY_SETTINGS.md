@@ -28,11 +28,13 @@ run every required check on the resulting commit. Never use an emergency bypass 
 
 ## Tag and release controls
 
-- Create two active tag rulesets for `v*`:
-  - a creation-only ruleset that restricts creation and lists only the founder as a bypass actor;
-  - an immutability ruleset that blocks update and deletion with an empty bypass list.
-  Keeping these controls separate prevents the founder's creation bypass from also permitting tag mutation.
-- Create release tags locally with `git tag -s`, verify with `git tag -v`, then push the one tag.
+- Keep one active tag ruleset for `v*` that blocks update and deletion with an empty bypass list.
+- Do not restrict tag creation: GitHub's built-in Actions identity cannot be a repository-ruleset bypass
+  actor. Instead, keep `contents: write` scoped only to the release workflow's final job. Pull-request jobs
+  and every pre-approval release job remain read-only.
+- The parent release workflow automatically increments the latest reachable patch version and creates an
+  annotated tag and GitHub Release only after both images pass their approval gates. It uses the repository
+  `GITHUB_TOKEN`; no long-lived release credential is stored.
 - Never move or recreate a published tag. A correction gets a new patch version.
 - The parent repository publishes containers only from a successful same-repository `main` workflow run.
 - The crypto repository publishes the universal CLI package only when a tag exactly matches `package.json`.
@@ -53,7 +55,8 @@ scan attestation only after the exact published digest passes the HIGH/CRITICAL 
 ## Public canary release identity
 
 - Set the non-secret repository variable `BURNERPAD_PUBLIC_ORIGIN` to the canonical production HTTPS
-  origin, without a path or trailing slash. Forks must not rely on the burnerpad.io workflow fallback.
+  origin, without a path or trailing slash. There is deliberately no workflow fallback: a missing or
+  invalid value fails at configuration before either public check makes an external request.
 - Set the non-secret repository variable `BURNERPAD_PRODUCTION_REVISION` to the full 40-character lowercase
   Git revision currently deployed in production.
 - Update it immediately after every successful deployment or rollback. The scheduled canary fails closed

@@ -184,70 +184,38 @@ Also test behavior with a harmless PR: an unsigned commit, stale branch, unresol
 required check must not be mergeable. Verify direct-push, deletion, and force-push restrictions from the
 authenticated ruleset response; do not risk the real branch merely to test a destructive failure mode.
 
-## 2. Protect `v*` release tags without weakening immutability
+## 2. Protect `v*` release-tag immutability
 
-Create **two** active tag rulesets targeting `v*`, not one:
+Create one active tag ruleset targeting `v*`:
 
 | Ruleset | Bypass list | Rules | Result |
 |---|---|---|---|
-| `Release tag creation` | Only `Cinderella-Man` (GitHub user ID `1019893`) | Restrict creations | Only the founder can create `v*` |
 | `Release tag immutability` | Empty | Restrict updates; restrict deletions | Nobody, including the founder, can move or delete a published `v*` through routine Git operations |
 
-This split is essential. A bypass actor bypasses the ruleset, not one selected rule within it. If creation,
-update, and deletion were in one ruleset, the founder's creation bypass would also permit moving or deleting
-the tag. Overlapping rulesets aggregate, so a founder can bypass the creation-only rule while remaining bound
-by the separate no-bypass immutability rules. GitHub documents creation, update, deletion, User bypass actors,
-and bypass modes in the [ruleset REST schema](https://docs.github.com/en/rest/repos/rules?apiVersion=2026-03-10#create-a-repository-ruleset).
-GitHub also documents that multiple rulesets can apply to one ref at the same time in
-[About rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets).
+Do not add a creation restriction. GitHub's built-in Actions identity cannot be selected as a repository
+ruleset bypass actor, and using a founder PAT or custom GitHub App would introduce a long-lived release
+credential. Creation authority is instead bounded by repository write access and workflow permissions:
+`contents: write` appears only on the final release-recording job, after source and both image gates pass.
+Pull-request workflows receive read-only contents access. The no-bypass ruleset still makes every created
+`v*` tag immutable. GitHub documents update and deletion rules and bypass modes in the
+[ruleset REST schema](https://docs.github.com/en/rest/repos/rules?apiVersion=2026-03-10#create-a-repository-ruleset).
 
 ### Web-UI procedure
 
-For each ruleset, open **burnerpad-lite → Settings → Rules → Rulesets → New ruleset → New tag ruleset**:
+Open **burnerpad-lite → Settings → Rules → Rulesets → New ruleset → New tag ruleset**:
 
-1. Set the name from the table and enforcement to **Active**.
+1. Set the name to `Release tag immutability` and enforcement to **Active**.
 2. Under target tags, include the pattern `v*`.
-3. For `Release tag creation`, add only user **Cinderella-Man** to the bypass list with **Always allow**, then
-   select **Restrict creations**.
-4. For `Release tag immutability`, leave the bypass list empty, then select **Restrict updates** and
+3. Leave the bypass list empty, then select **Restrict updates** and
    **Restrict deletions**.
-5. Save and reopen both rulesets to verify their target, enforcement, rules, and bypass lists.
-
-If the UI does not offer a specific User as a bypass actor, use the documented REST `User` actor shown below.
-Do not broaden the creation authority to every repository administrator or organization owner.
+4. Save and reopen the ruleset to verify its target, enforcement, rules, and empty bypass list.
 
 The UI and `fnmatch` targeting procedure are documented by GitHub in
 [Creating rulesets for a repository](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository).
 
 ### Equivalent REST payloads
 
-Create the founder-only tag-creation ruleset with `POST /repos/burnerpad/burnerpad-lite/rulesets`:
-
-```json
-{
-  "name": "Release tag creation",
-  "target": "tag",
-  "enforcement": "active",
-  "bypass_actors": [
-    {
-      "actor_id": 1019893,
-      "actor_type": "User",
-      "bypass_mode": "always"
-    }
-  ],
-  "conditions": {
-    "ref_name": {
-      "include": ["refs/tags/v*"],
-      "exclude": []
-    }
-  },
-  "rules": [
-    {"type": "creation"}
-  ]
-}
-```
-
-Create the no-bypass immutability ruleset through the same endpoint:
+Create the no-bypass immutability ruleset with `POST /repos/burnerpad/burnerpad-lite/rulesets`:
 
 ```json
 {
@@ -286,24 +254,23 @@ Creating a ruleset requires repository **Administration: write**. Reading the ru
 access is also necessary because GitHub intentionally withholds `bypass_actors` from callers that cannot write
 the ruleset.
 
-### Tag-signature limitation and release procedure
+### Automated release procedure and tag-signature limitation
 
-The rulesets above control who may create, move, and delete refs. GitHub's `required_signatures` rule validates
-the commits pushed to matching refs; it is not a substitute for verifying the signature on the annotated Git
-tag object. Continue to create the release locally after the PR has merged:
+The workflow permission controls who may create release refs, and the ruleset prevents moving or deleting
+them. GitHub's `required_signatures` rule validates commits pushed to matching refs; it does not sign the
+annotated Git tag object. Routine parent releases therefore trust the narrowly permissioned workflow,
+immutable tag ruleset, exact tested revision, OIDC build
+provenance, source SBOM attestation, digest-bound vulnerability attestation, and keyless image signature—not
+a long-lived tag-signing secret.
 
-```bash
-git switch main
-git pull --ff-only origin main
-git tag -s v1.0.0 -m 'Burnerpad v1.0.0'
-git tag -v v1.0.0
-git push origin refs/tags/v1.0.0
-```
+After a same-repository `main` run passes all required tests, `.github/workflows/release.yml` serially selects
+the next patch after the latest reachable `vX.Y.Z` tag. It creates the annotated tag and GitHub Release only
+after the exact source archive and both images pass all release gates. A rerun reuses a tag already naming the
+same revision, and a failed release creates no tag, so neither case consumes another version. Routine
+Dependabot merges therefore require no version edit, release branch, or manual tag.
 
 Never force-push a tag, and never disable the immutability ruleset to correct a release. Publish a new patch
-version instead. Test the creation restriction before `v1.0.0` with a disposable matching tag such as
-`v0.0.0-ruleset-test`, then delete it **before** enabling the immutability ruleset. Once the no-bypass deletion
-rule is active, a matching test tag is intentionally permanent.
+version instead. Once the no-bypass deletion rule is active, any matching test tag is intentionally permanent.
 
 ## 3. Create hard USD 0 Actions and Packages budgets
 
@@ -707,11 +674,11 @@ not contain tokens, private URLs, email addresses, capability IDs, personal reco
 - [ ] `main` requires PRs, zero approvals, resolved conversations, current branches, verified signatures,
   linear history, and exactly the five GitHub-Actions-sourced checks.
 - [ ] A harmless PR demonstrates that a failed check, stale branch, or unresolved conversation blocks merging.
-- [ ] `Release tag creation` targets `refs/tags/v*`, contains only the founder User bypass, and restricts
-  creation.
 - [ ] `Release tag immutability` targets `refs/tags/v*`, has no bypass actors, and restricts update and deletion.
-- [ ] Signed annotated tag `v1.0.0` is created only on the exact merged `main` commit and verifies locally before
-  its one permitted push.
+- [ ] No tag-creation ruleset is active, and `contents: write` is scoped only to the final release-recording
+  job after every source and image gate.
+- [ ] The release workflow creates the next immutable annotated patch tag only after the exact `main` revision
+  and both published images pass every release gate; a rerun reuses the existing version.
 - [ ] Organization Actions budget: USD 0, hard stop, alerts on, correct recipient.
 - [ ] Organization Packages budget: USD 0, hard stop, alerts on, correct recipient.
 - [ ] Included-usage alerts at 90% and 100% are enabled.

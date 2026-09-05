@@ -181,6 +181,12 @@ Trivy gates, production-container tests, smoke-script tests, workflow/shell lint
 validation. Only a successful `test` workflow triggers `.github/workflows/release.yml`. Pull requests,
 forks, failed test runs, and non-`main` branches cannot publish.
 
+Release versioning is automatic and serialized. The workflow reuses a `vX.Y.Z` tag already naming the
+tested revision on a safe rerun; otherwise it increments the patch component of the newest reachable
+release tag. Only after the source evidence and both OCI images pass every publication gate does it create
+the immutable annotated tag and GitHub Release. Therefore a routine dependency PR needs no version-file
+edit, release branch, or follow-up version PR. A failed publication consumes no version.
+
 Before publishing either image, the release workflow packages the exact parent commit plus its pinned
 crypto submodule commit into a deterministic source archive. Pinned Syft generates an SPDX JSON SBOM from
 that extracted tree; GitHub attests the archive/SBOM relationship, verifies it immediately, and retains the
@@ -231,6 +237,10 @@ Set the scheduled public canary's non-secret origin before enabling it:
 ```bash
 gh variable set BURNERPAD_PUBLIC_ORIGIN --body 'https://burnerpad.example'
 ```
+
+The workflow deliberately has no default origin. If this variable is missing or invalid, both public
+checks fail at the privacy-safe `configuration` stage before making an external request; a fork can never
+silently probe `burnerpad.io` or another operator's deployment.
 
 After the first successful deployment, set its independently maintained expected release:
 

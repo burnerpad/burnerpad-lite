@@ -97,6 +97,7 @@ test("passphrase create → key-less link → chip reveal (wrong order, then rig
   await expect(r.locator("#bp-psk")).toBeVisible();
   await expect(r.locator("#bp-unsupported")).toBeHidden();
   await expect(r.locator("#bp-psk-field .tagrow")).toBeVisible(); // chips + input flow inline, like create
+  await expect(r.locator("#bp-psk-input")).toBeFocused(); // ready to type without an extra click
   // the reveal button is always active; its label invites words first, then flips to "Reveal & decrypt"
   await expect(r.locator("#bp-psk-reveal")).toBeEnabled();
   await expect(r.locator("#bp-psk-reveal")).toContainText(/enter at least 7 words/i);

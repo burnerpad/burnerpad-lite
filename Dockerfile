@@ -1,4 +1,5 @@
 # ── build ────────────────────────────────────────────────────────────────────
+ARG BURNERPAD_VERSION=0.0.0
 # Build and runtime MUST stay on the SAME Ubuntu LTS release → compatible glibc and OpenSSL. The release bundles Erlang's
 # `crypto` NIF, which is dynamically linked against libcrypto; if the runtime's OpenSSL is older than the
 # build's, the NIF fails to load at boot (e.g. "symbol EVP_MD_CTX_get_size_ex not found"). Both stages use
@@ -6,12 +7,15 @@
 # abort on newer Intel hosts. Pinned by DIGEST as well as tag (L11) so tags cannot swap the base images.
 FROM hexpm/elixir:1.20.3-erlang-29.0.5-ubuntu-noble-20260810@sha256:f1ee5c316e7716d3c4f5b482cf60d465473d1eb9aef3254a39d6bd9502c80258 AS build
 
+ARG BURNERPAD_VERSION
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential ca-certificates git libsctp1 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-ENV MIX_ENV=prod
+ENV MIX_ENV=prod \
+    BURNERPAD_VERSION=$BURNERPAD_VERSION
 # Pin the build tools. Compile Hex from its exact source object inside this OTP-pinned builder: a
 # precompiled archive may carry BEAM instructions from a newer OTP even when its download is checksummed.
 # Rebar's exact upstream escript is checksum-verified. Neither tool ships in the runtime image.
@@ -22,7 +26,7 @@ RUN mix archive.install git https://github.com/hexpm/hex.git \
 
 # Copy the lock too, so the image builds EXACTLY what was tested + audited (M4), and fail the build on any
 # dependency advisory (M9): a vulnerable lock can never be baked into an image.
-COPY mix.exs mix.lock VERSION ./
+COPY mix.exs mix.lock ./
 RUN mix deps.get --only prod && mix hex.audit && mix deps.compile
 
 COPY lib lib
@@ -44,7 +48,7 @@ RUN mix compile --warnings-as-errors \
 FROM ubuntu:noble-20260810@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS runtime
 
 ARG BURNERPAD_REVISION=unknown
-ARG BURNERPAD_VERSION=1.0.0
+ARG BURNERPAD_VERSION
 LABEL org.opencontainers.image.source="https://github.com/burnerpad/burnerpad-lite" \
       org.opencontainers.image.title="burnerpad-lite" \
       org.opencontainers.image.revision=$BURNERPAD_REVISION \

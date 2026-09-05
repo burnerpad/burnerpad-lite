@@ -48,6 +48,12 @@ Every commit needs **two distinct things**:
 
 The options are case-sensitive. Use both even when `commit.gpgsign=true` makes `-S` automatic.
 
+The sole automated-contributor exception is GitHub's canonical Dependabot service. Its
+`Signed-off-by: dependabot[bot] <support@github.com>` trailer is accepted only on a Dependabot-authored
+pull request when the commit author and committer are GitHub's canonical bot identities and GitHub's
+commits API reports a valid signature. Human commits and every other bot still require a trailer matching
+the commit author or committer.
+
 ### One-time SSH signing setup
 
 Git supports GPG, SSH, and S/MIME signatures. This project recommends SSH signing on Git 2.34 or newer. If
