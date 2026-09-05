@@ -120,7 +120,7 @@ expect_fail "Signed-off-by outside the trailer block" alice
 dependabot_json='{
   "author": {"login": "dependabot[bot]"},
   "committer": {"login": "web-flow"},
-  "verification": {"verified": true, "reason": "valid"}
+  "commit": {"verification": {"verified": true, "reason": "valid"}}
 }'
 
 create_case verified-dependabot
@@ -133,14 +133,14 @@ expect_fail "Dependabot commit on a non-Dependabot PR" alice "$dependabot_json"
 unverified_dependabot_json='{
   "author": {"login": "dependabot[bot]"},
   "committer": {"login": "web-flow"},
-  "verification": {"verified": false, "reason": "unsigned"}
+  "commit": {"verification": {"verified": false, "reason": "unsigned"}}
 }'
 expect_fail "unverified Dependabot commit" 'dependabot[bot]' "$unverified_dependabot_json"
 
 wrong_api_identity_json='{
   "author": {"login": "renovate[bot]"},
   "committer": {"login": "web-flow"},
-  "verification": {"verified": true, "reason": "valid"}
+  "commit": {"verification": {"verified": true, "reason": "valid"}}
 }'
 expect_fail "mismatched GitHub API identity" 'dependabot[bot]' "$wrong_api_identity_json"
 

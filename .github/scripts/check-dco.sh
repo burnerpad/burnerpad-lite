@@ -29,8 +29,8 @@ verified_dependabot_commit() {
   jq -e '
     .author.login == "dependabot[bot]" and
     .committer.login == "web-flow" and
-    .verification.verified == true and
-    .verification.reason == "valid"
+    .commit.verification.verified == true and
+    .commit.verification.reason == "valid"
   ' >/dev/null <<< "$commit_json"
 }
 
