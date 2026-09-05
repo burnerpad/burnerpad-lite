@@ -29,10 +29,13 @@ run every required check on the resulting commit. Never use an emergency bypass 
 ## Tag and release controls
 
 - Create two active tag rulesets for `v*`:
-  - a creation-only ruleset that restricts creation and lists only the founder as a bypass actor;
+  - a creation-only ruleset that restricts creation and lists only the founder and the GitHub Actions app
+    (integration ID `15368`) as bypass actors;
   - an immutability ruleset that blocks update and deletion with an empty bypass list.
-  Keeping these controls separate prevents the founder's creation bypass from also permitting tag mutation.
-- Create release tags locally with `git tag -s`, verify with `git tag -v`, then push the one tag.
+  Keeping these controls separate prevents either creation bypass from permitting tag mutation.
+- The parent release workflow automatically increments the latest reachable patch version and creates an
+  annotated tag and GitHub Release only after both images pass their approval gates. It uses the repository
+  `GITHUB_TOKEN`; no long-lived release credential is stored.
 - Never move or recreate a published tag. A correction gets a new patch version.
 - The parent repository publishes containers only from a successful same-repository `main` workflow run.
 - The crypto repository publishes the universal CLI package only when a tag exactly matches `package.json`.

@@ -7,13 +7,15 @@
 import { createRequire } from "node:module";
 import crypto from "node:crypto";
 import { createCanaryReporter } from "./canary-report.mjs";
+import { parseCanaryOrigin } from "./origin.mjs";
 import { waitUntilReady } from "./readiness.mjs";
 
 const require = createRequire(import.meta.url);
 const C = require("../../priv/static/vendor/crypto-js/burnerpad-crypto.js");
-const base = (process.env.BURNERPAD_BASE_URL || "").replace(/\/$/, "");
+const configuredOrigin = process.env.BURNERPAD_BASE_URL || "";
 const expectedRevision = process.env.BURNERPAD_EXPECTED_REVISION || "";
 const requireExpectedRevision = process.env.BURNERPAD_REQUIRE_EXPECTED_REVISION === "true";
+const requireHttpsOrigin = process.env.BURNERPAD_REQUIRE_HTTPS_ORIGIN === "true";
 const timeoutMs = Number(process.env.BURNERPAD_CANARY_TIMEOUT_MS || 15_000);
 const reporter = createCanaryReporter({ check: "end_to_end" });
 const requireNoStore = (response) => {
@@ -28,14 +30,12 @@ const requireNoStore = (response) => {
 try {
   reporter.setStage("configuration");
   reporter.configureExpectedRevision(expectedRevision, { required: requireExpectedRevision });
-  if (!/^https?:\/\/[^/]+(?::\d+)?$/.test(base)) {
-    throw new Error("BURNERPAD_BASE_URL must be an origin without a path");
-  }
+  const origin = parseCanaryOrigin(configuredOrigin, { requireHttps: requireHttpsOrigin }).origin;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("canary timeout must be positive");
 
   const request = async (path, init = {}, requestTimeoutMs = timeoutMs) => {
     const signal = AbortSignal.timeout(Math.max(1, requestTimeoutMs));
-    return fetch(base + path, { redirect: "error", cache: "no-store", ...init, signal });
+    return fetch(origin + path, { redirect: "error", cache: "no-store", ...init, signal });
   };
 
   reporter.setStage("readiness");

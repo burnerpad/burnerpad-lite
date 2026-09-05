@@ -10,10 +10,35 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createCanaryReporter } from "../../ops/smoke/canary-report.mjs";
+import { parseCanaryOrigin } from "../../ops/smoke/origin.mjs";
 
 const revisionA = "a".repeat(40);
 const revisionB = "b".repeat(40);
 const repoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+test("public canaries accept only an exact canonical HTTPS origin", () => {
+  assert.equal(
+    parseCanaryOrigin("https://burnerpad.example", { requireHttps: true }).origin,
+    "https://burnerpad.example",
+  );
+
+  for (const invalid of [
+    "",
+    "http://burnerpad.example",
+    "https://burnerpad.example/",
+    "https://burnerpad.example/path",
+    "https://burnerpad.example?probe=1",
+    "https://burnerpad.example#fragment",
+    "https://user:pass@burnerpad.example",
+  ]) {
+    assert.throws(() => parseCanaryOrigin(invalid, { requireHttps: true }), /canonical HTTPS origin/);
+  }
+});
+
+test("local canaries permit canonical loopback HTTP only", () => {
+  assert.equal(parseCanaryOrigin("http://127.0.0.1:4015").origin, "http://127.0.0.1:4015");
+  assert.throws(() => parseCanaryOrigin("http://burnerpad.example"), /loopback HTTP origin/);
+});
 
 const capture = () => {
   const logs = [];
@@ -115,6 +140,57 @@ const runCanary = async (handler, { expectedRevision = revisionA, timeoutMs = 5_
     await rm(tempDir, { recursive: true, force: true });
   }
 };
+
+const runRejectedPublicOrigin = async (script, origin) => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "burnerpad-canary-origin-"));
+  const outputFile = path.join(tempDir, "github-output");
+
+  try {
+    const child = spawn(process.execPath, [script], {
+      cwd: repoDir,
+      env: {
+        ...process.env,
+        BURNERPAD_BASE_URL: origin,
+        BURNERPAD_EXPECTED_REVISION: revisionA,
+        BURNERPAD_REQUIRE_EXPECTED_REVISION: "true",
+        BURNERPAD_REQUIRE_HTTPS_ORIGIN: "true",
+        GITHUB_OUTPUT: outputFile,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    const exitCode = await new Promise((resolve) => child.on("close", resolve));
+    return { exitCode, stderr, output: await readFile(outputFile, "utf8") };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+};
+
+test("both public canary processes reject an invalid origin before making a request", async () => {
+  let requests = 0;
+  const server = http.createServer((_request, response) => {
+    requests += 1;
+    response.writeHead(200);
+    response.end("unexpected");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const origin = `http://127.0.0.1:${address.port}`;
+
+  try {
+    for (const script of ["ops/smoke/edge-contract.mjs", "ops/smoke/e2e-canary.mjs"]) {
+      const result = await runRejectedPublicOrigin(script, origin);
+      assert.equal(result.exitCode, 1);
+      assert.match(result.stderr, /failed stage=configuration/);
+      assert.match(result.output, /^status=failure\n.+\nstage=configuration\n/m);
+    }
+    assert.equal(requests, 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
 
 test("end-to-end transport failure reports its stage and the observed release only", async () => {
   const result = await runCanary((request, response) => {

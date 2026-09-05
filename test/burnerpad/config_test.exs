@@ -197,7 +197,7 @@ defmodule Burnerpad.ConfigTest do
   test "version combines the application version with a validated release revision" do
     System.put_env("BURNERPAD_REVISION", "abcdef1")
     assert Config.load!() == :ok
-    assert Config.version() == "1.0.1+abcdef1"
+    assert Config.version() == "#{Application.spec(:burnerpad, :vsn)}+abcdef1"
   end
 
   test "an unsafe release revision fails the boot instead of reaching HTML" do

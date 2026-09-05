@@ -6,13 +6,18 @@ import { readFileSync } from "node:fs";
 
 const release = readFileSync(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
 const deploy = readFileSync(new URL("../../ops/roles/deploy/tasks/main.yml", import.meta.url), "utf8");
-const version = readFileSync(new URL("../../VERSION", import.meta.url), "utf8").trim();
 const dockerfile = readFileSync(new URL("../../Dockerfile", import.meta.url), "utf8");
+const mixProject = readFileSync(new URL("../../mix.exs", import.meta.url), "utf8");
 
-assert.equal(version, "1.0.1");
+assert.match(release, /group: release\n/);
+assert.match(release, /version=\$\([.]github\/scripts\/next-release-version[.]sh "\$REVISION"\)/);
+assert.match(release, /needs: \[identity, source, publish\]/);
+assert.match(release, /gh release create "\$tag"/);
 assert.match(release, /org\.opencontainers\.image\.version=\$\{\{ steps\.identity\.outputs\.version \}\}/);
 assert.match(release, /BURNERPAD_VERSION=\$\{\{ steps\.identity\.outputs\.version \}\}/);
-assert.match(dockerfile, new RegExp(`ARG BURNERPAD_VERSION=${version.replaceAll(".", "\\.")}`));
+assert.match(dockerfile, /ARG BURNERPAD_VERSION=0[.]0[.]0/);
+assert.match(mixProject, /System[.]get_env\("BURNERPAD_VERSION", "0[.]0[.]0"\)/);
+assert.doesNotMatch(release + dockerfile + mixProject, /1[.]0[.]1/);
 
 const orderedReleaseSteps = [
   "- name: Build and publish ${{ matrix.version }} image",
@@ -43,6 +48,11 @@ const buildSection = release.slice(
 assert.doesNotMatch(buildSection, /:main/);
 assert.match(release, /imagetools create --prefer-index=false --tag "\$IMAGE:main"/);
 assert.match(release, /test "\$promoted_digest" = "\$DIGEST"/);
+assert.ok(
+  release.indexOf("- name: Create the immutable release tag and GitHub Release") >
+    release.indexOf("- name: Promote the approved digest to the main alias without rebuilding"),
+  "release tag must be recorded only after image approval and promotion",
+);
 
 const sourceEvidenceSection = release.slice(
   release.indexOf("- name: Verify and collect the source release evidence"),

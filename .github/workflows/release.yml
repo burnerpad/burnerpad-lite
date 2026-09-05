@@ -11,16 +11,37 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.workflow_run.head_sha }}
+  # Version selection and tag creation are one serialized transaction. A newer main commit waits for the
+  # prior release to record its tag before calculating the next patch.
+  group: release
   cancel-in-progress: false
 
 jobs:
-  source:
+  identity:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select the automatic patch release
+        id: version
+        env:
+          REVISION: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          version=$(.github/scripts/next-release-version.sh "$REVISION")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  source:
+    needs: identity
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -86,8 +107,7 @@ jobs:
           compression-level: 0
 
   publish:
-    needs: source
-    if: needs.source.result == 'success'
+    needs: [identity, source]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -114,16 +134,12 @@ jobs:
       - name: Resolve immutable release identity
         id: identity
         env:
+          APP_VERSION: ${{ needs.identity.outputs.version }}
           REVISION: ${{ github.event.workflow_run.head_sha }}
           SUFFIX: ${{ matrix.suffix }}
         run: |
-          app_version=$(tr -d '\n' < VERSION)
-          printf '%s\n' "$app_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
-            echo "::error::VERSION must contain an X.Y.Z semantic application version"
-            exit 1
-          }
           if [ -z "$SUFFIX" ]; then
-            component_version=$app_version
+            component_version=$APP_VERSION
           else
             component_version=$(sed -n 's/^ARG CLOUDFLARED_VERSION=//p' ops/cloudflared.Dockerfile)
           fi
@@ -231,3 +247,47 @@ jobs:
             --metadata-file "$PROMOTION_METADATA" "$IMAGE@$DIGEST"
           promoted_digest=$(jq -r '."containerimage.descriptor".digest' "$PROMOTION_METADATA")
           test "$promoted_digest" = "$DIGEST"
+
+  record:
+    needs: [identity, source, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Create the immutable release tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVISION: ${{ github.event.workflow_run.head_sha }}
+          VERSION: ${{ needs.identity.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          assets="$RUNNER_TEMP/release-assets"
+          mkdir -p "$assets"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "burnerpad-lite-source-$REVISION" --dir "$assets"
+
+          if ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" 2>/dev/null); then
+            ref_type=$(jq -r '.object.type' <<< "$ref")
+            ref_sha=$(jq -r '.object.sha' <<< "$ref")
+            if [ "$ref_type" = tag ]; then
+              ref_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$ref_sha" --jq '.object.sha')
+            fi
+            test "$ref_sha" = "$REVISION" || {
+              echo "::error::$tag already names a different revision"
+              exit 1
+            }
+          else
+            tag_object=$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+              -f tag="$tag" -f message="Burnerpad $tag" -f object="$REVISION" -f type=commit \
+              --jq .sha)
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$tag" -f sha="$tag_object" >/dev/null
+          fi
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$tag is already published"
+          else
+            gh release create "$tag" "$assets"/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "Burnerpad $tag" --generate-notes
+          fi
