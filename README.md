@@ -23,8 +23,8 @@ that delivery-path risk. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for 
 
 ## Run it
 
-The application version is **1.0.0**, sourced from `VERSION`; a deployed instance reports it together with
-its immutable Git revision as `1.0.0+<revision>`. The pinned toolchain is **Elixir 1.20.3 / Erlang 29.0.5 /
+The application version is **1.0.1**, sourced from `VERSION`; a deployed instance reports it together with
+its immutable Git revision as `1.0.1+<revision>`. The pinned toolchain is **Elixir 1.20.3 / Erlang 29.0.5 /
 Node 24.19.0** (`.tool-versions`). The browser crypto is a git submodule, so pull it too:
 
 ```bash

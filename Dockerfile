@@ -44,7 +44,7 @@ RUN mix compile --warnings-as-errors \
 FROM ubuntu:noble-20260810@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS runtime
 
 ARG BURNERPAD_REVISION=unknown
-ARG BURNERPAD_VERSION=1.0.0
+ARG BURNERPAD_VERSION=1.0.1
 LABEL org.opencontainers.image.source="https://github.com/burnerpad/burnerpad-lite" \
       org.opencontainers.image.title="burnerpad-lite" \
       org.opencontainers.image.revision=$BURNERPAD_REVISION \
