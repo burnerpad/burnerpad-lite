@@ -28,11 +28,10 @@ run every required check on the resulting commit. Never use an emergency bypass 
 
 ## Tag and release controls
 
-- Create two active tag rulesets for `v*`:
-  - a creation-only ruleset that restricts creation and lists only the founder and the GitHub Actions app
-    (integration ID `15368`) as bypass actors;
-  - an immutability ruleset that blocks update and deletion with an empty bypass list.
-  Keeping these controls separate prevents either creation bypass from permitting tag mutation.
+- Keep one active tag ruleset for `v*` that blocks update and deletion with an empty bypass list.
+- Do not restrict tag creation: GitHub's built-in Actions identity cannot be a repository-ruleset bypass
+  actor. Instead, keep `contents: write` scoped only to the release workflow's final job. Pull-request jobs
+  and every pre-approval release job remain read-only.
 - The parent release workflow automatically increments the latest reachable patch version and creates an
   annotated tag and GitHub Release only after both images pass their approval gates. It uses the repository
   `GITHUB_TOKEN`; no long-lived release credential is stored.

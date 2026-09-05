@@ -13,6 +13,11 @@ assert.match(release, /group: release\n/);
 assert.match(release, /version=\$\([.]github\/scripts\/next-release-version[.]sh "\$REVISION"\)/);
 assert.match(release, /needs: \[identity, source, publish\]/);
 assert.match(release, /gh release create "\$tag"/);
+assert.equal(
+  release.match(/^      contents: write$/gm)?.length,
+  1,
+  "only the final release-recording job may write repository contents",
+);
 assert.match(release, /org\.opencontainers\.image\.version=\$\{\{ steps\.identity\.outputs\.version \}\}/);
 assert.match(release, /BURNERPAD_VERSION=\$\{\{ steps\.identity\.outputs\.version \}\}/);
 assert.match(dockerfile, /ARG BURNERPAD_VERSION=0[.]0[.]0/);
