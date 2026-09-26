@@ -1,7 +1,9 @@
 defmodule Burnerpad.MixProject do
   use Mix.Project
 
-  @app_version Path.join(__DIR__, "VERSION") |> File.read!() |> String.trim()
+  # Release builds inject the version derived from immutable Git tags. Source checkouts use an explicit
+  # development version, so publishing never requires a version-file edit.
+  @app_version System.get_env("BURNERPAD_VERSION", "0.0.0")
 
   def project do
     [

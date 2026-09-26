@@ -824,6 +824,7 @@
 
       show(psk);
       renderPskChips(); // initial paint: "0 / 7" pill + "Enter at least 7 words" button
+      pskInput.focus(); // this is the reveal screen's only input; make it ready immediately
     }
   }
 })();

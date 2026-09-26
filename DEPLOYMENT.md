@@ -181,6 +181,12 @@ Trivy gates, production-container tests, smoke-script tests, workflow/shell lint
 validation. Only a successful `test` workflow triggers `.github/workflows/release.yml`. Pull requests,
 forks, failed test runs, and non-`main` branches cannot publish.
 
+Release versioning is automatic and serialized. The workflow reuses a `vX.Y.Z` tag already naming the
+tested revision on a safe rerun; otherwise it increments the patch component of the newest reachable
+release tag. Only after the source evidence and both OCI images pass every publication gate does it create
+the immutable annotated tag and GitHub Release. Therefore a routine dependency PR needs no version-file
+edit, release branch, or follow-up version PR. A failed publication consumes no version.
+
 Before publishing either image, the release workflow packages the exact parent commit plus its pinned
 crypto submodule commit into a deterministic source archive. Pinned Syft generates an SPDX JSON SBOM from
 that extracted tree; GitHub attests the archive/SBOM relationship, verifies it immediately, and retains the
@@ -200,11 +206,12 @@ For each image, the release workflow then:
 The source SBOM and both image SBOMs are distinct release records: the former describes the reviewed source
 tree, while the latter describe the built runtime contents.
 
-The tunnel artifact is not an unreviewed mutable upstream image. `ops/cloudflared.Dockerfile` fetches an
-exact upstream release commit, compiles its vendored dependencies with the pinned Go toolchain, and copies
-the static binary into a digest-pinned distroless image. The daily dependency audit rebuilds and scans both
-project images, checks for a newer cloudflared release, and requires removing this compatibility build once
-Cloudflare's official current image passes the repository's vulnerability policy.
+`ops/cloudflared.Dockerfile` wraps Cloudflare's official image pinned by release version and immutable
+manifest digest, adding the project's release labels and explicit loopback readiness probe. Version,
+image digest, and upstream revision are reviewed together. The daily dependency audit rebuilds and scans
+both project images, scans the newest official cloudflared image, and fails if a newer release is available.
+The tunnel artifact follows the same scan, attestation, signature, and exact-digest deployment policy as
+the app image.
 
 Publication and deployment are deliberately separate. The release workflow has no VPS, Cloudflare,
 Tailscale, heartbeat, operator, or Erlang-cookie secret and cannot contact production. Deployment is an
@@ -231,6 +238,10 @@ Set the scheduled public canary's non-secret origin before enabling it:
 ```bash
 gh variable set BURNERPAD_PUBLIC_ORIGIN --body 'https://burnerpad.example'
 ```
+
+The workflow deliberately has no default origin. If this variable is missing or invalid, both public
+checks fail at the privacy-safe `configuration` stage before making an external request; a fork can never
+silently probe `burnerpad.io` or another operator's deployment.
 
 After the first successful deployment, set its independently maintained expected release:
 

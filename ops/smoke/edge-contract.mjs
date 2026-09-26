@@ -8,10 +8,12 @@ import { createCanaryReporter } from "./canary-report.mjs";
 import { requireDynamicNoStore, requireStaticRevalidation } from "./edge-cache-contract.mjs";
 import { hasUnsafeHtmlTransformation } from "./html-contract.mjs";
 import { verifySourceIdentity } from "./edge-source-contract.mjs";
+import { parseCanaryOrigin } from "./origin.mjs";
 
-const origin = (process.env.BURNERPAD_BASE_URL || "").replace(/\/$/, "");
+const configuredOrigin = process.env.BURNERPAD_BASE_URL || "";
 const expectedRevision = process.env.BURNERPAD_EXPECTED_REVISION || "";
 const requireExpectedRevision = process.env.BURNERPAD_REQUIRE_EXPECTED_REVISION === "true";
+const requireHttpsOrigin = process.env.BURNERPAD_REQUIRE_HTTPS_ORIGIN === "true";
 const timeout = Number(process.env.BURNERPAD_CANARY_TIMEOUT_MS || 15_000);
 const reporter = createCanaryReporter({ check: "edge_contract" });
 const get = (url, init = {}) => fetch(url, {
@@ -26,10 +28,8 @@ try {
   reporter.setStage("configuration");
   reporter.configureExpectedRevision(expectedRevision, { required: requireExpectedRevision });
   if (!Number.isFinite(timeout) || timeout <= 0) throw new Error("canary timeout must be positive");
-  const parsed = new URL(origin);
-  if (parsed.protocol !== "https:" || parsed.pathname !== "/") {
-    throw new Error("BURNERPAD_BASE_URL must be an HTTPS origin without a path");
-  }
+  const parsed = parseCanaryOrigin(configuredOrigin, { requireHttps: requireHttpsOrigin });
+  const origin = parsed.origin;
 
   const legacyTlsRejected = () => new Promise((resolve, reject) => {
     const req = https.request({

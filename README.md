@@ -23,9 +23,10 @@ that delivery-path risk. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for 
 
 ## Run it
 
-The application version is **1.0.0**, sourced from `VERSION`; a deployed instance reports it together with
-its immutable Git revision as `1.0.0+<revision>`. The pinned toolchain is **Elixir 1.20.3 / Erlang 29.0.5 /
-Node 24.19.0** (`.tool-versions`). The browser crypto is a git submodule, so pull it too:
+Development checkouts identify as `0.0.0`; after a successful `main` build, the release workflow selects
+the next patch after the latest reachable immutable `vX.Y.Z` tag and reports `<version>+<revision>`. No
+version file or release-only source commit is required. The pinned toolchain is **Elixir 1.20.3 / Erlang
+29.0.5 / Node 24.19.0** (`.tool-versions`). The browser crypto is a git submodule, so pull it too:
 
 ```bash
 git clone --recurse-submodules https://github.com/burnerpad/burnerpad-lite

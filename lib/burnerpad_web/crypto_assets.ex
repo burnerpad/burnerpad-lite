@@ -23,7 +23,7 @@ defmodule BurnerpadWeb.CryptoAssets do
   # removing a pinned file cannot update one path while silently omitting the other.
   @expected %{
     "crypto/crypto-app.js" =>
-      "sha384-vkBheS6XBgK2BPM5KMHMKo4pBGoPjoDCNg/XAtWK8EPyyyiH82T/FNKBLFRIsD2z",
+      "sha384-XTCMtIW4AYuSDDgIzymLTeEm1VYGTKZVNIzIMD09cesyFtnexgcBo4sJsXoK5YFq",
     "crypto/crypto.css" =>
       "sha384-uJOuVSd6eFuO2bHlLD8AAO9VNE5io+g6AKvsbXITJoKWrLIFqkNUCA0Wb9GCck9B",
     "crypto/theme.js" =>
