@@ -206,11 +206,12 @@ For each image, the release workflow then:
 The source SBOM and both image SBOMs are distinct release records: the former describes the reviewed source
 tree, while the latter describe the built runtime contents.
 
-The tunnel artifact is not an unreviewed mutable upstream image. `ops/cloudflared.Dockerfile` fetches an
-exact upstream release commit, compiles its vendored dependencies with the pinned Go toolchain, and copies
-the static binary into a digest-pinned distroless image. The daily dependency audit rebuilds and scans both
-project images, checks for a newer cloudflared release, and requires removing this compatibility build once
-Cloudflare's official current image passes the repository's vulnerability policy.
+`ops/cloudflared.Dockerfile` wraps Cloudflare's official image pinned by release version and immutable
+manifest digest, adding the project's release labels and explicit loopback readiness probe. Version,
+image digest, and upstream revision are reviewed together. The daily dependency audit rebuilds and scans
+both project images, scans the newest official cloudflared image, and fails if a newer release is available.
+The tunnel artifact follows the same scan, attestation, signature, and exact-digest deployment policy as
+the app image.
 
 Publication and deployment are deliberately separate. The release workflow has no VPS, Cloudflare,
 Tailscale, heartbeat, operator, or Erlang-cookie secret and cannot contact production. Deployment is an

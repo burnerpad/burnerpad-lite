@@ -47,38 +47,16 @@ jobs:
           latest=$(gh api repos/cloudflare/cloudflared/releases/latest --jq .tag_name)
 
           docker pull "cloudflare/cloudflared:$latest"
-          if docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
             image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
-            --skip-version-check "cloudflare/cloudflared:$latest"; then
-            official_clean=true
-          else
-            official_clean=false
-            echo "The official $latest image still has high/critical findings; retaining the temporary patched build"
-          fi
+            --skip-version-check "cloudflare/cloudflared:$latest"
 
           if [ "$pinned" != "$latest" ]; then
-            commit=$(git ls-remote https://github.com/cloudflare/cloudflared.git "refs/tags/$latest^{}" | awk 'NR == 1 { print $1 }')
-            if [ -z "$commit" ]; then
-              commit=$(git ls-remote https://github.com/cloudflare/cloudflared.git "refs/tags/$latest" | awk 'NR == 1 { print $1 }')
-            fi
-            test -n "$commit"
-            docker build -f ops/cloudflared.Dockerfile \
-              --build-arg "CLOUDFLARED_VERSION=$latest" \
-              --build-arg "UPSTREAM_REVISION=$commit" \
-              -t burnerpad-cloudflared:candidate .
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-              aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
-              image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
-              --skip-version-check burnerpad-cloudflared:candidate
-            echo "::error::cloudflared $latest is available; this repository still builds $pinned"
+            echo "::error::cloudflared $latest is available; update the reviewed version, image digest, and upstream revision (currently $pinned)"
             exit 1
           fi
 
-          if [ "$official_clean" = true ]; then
-            echo "::error::Cloudflare's official $latest image now passes; remove the temporary custom build"
-            exit 1
-          fi
           echo "cloudflared $pinned is the newest GitHub release"
       - name: Reconcile the durable dependency-audit incident
         if: ${{ always() && !cancelled() }}
