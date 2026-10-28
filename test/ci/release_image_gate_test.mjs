@@ -8,6 +8,20 @@ const release = readFileSync(new URL("../../.github/workflows/release.yml", impo
 const deploy = readFileSync(new URL("../../ops/roles/deploy/tasks/main.yml", import.meta.url), "utf8");
 const dockerfile = readFileSync(new URL("../../Dockerfile", import.meta.url), "utf8");
 const mixProject = readFileSync(new URL("../../mix.exs", import.meta.url), "utf8");
+const depsAudit = readFileSync(new URL("../../.github/workflows/deps-audit.yml", import.meta.url), "utf8");
+const tests = readFileSync(new URL("../../.github/workflows/test.yml", import.meta.url), "utf8");
+
+// Only pull-request CI may relax the absolute audit to "no new findings". The image build audits by
+// default, and the release and the daily audit can neither skip it nor use the pull-request gate.
+assert.match(dockerfile, /^ARG BURNERPAD_HEX_AUDIT=required$/m);
+assert.match(dockerfile, /if \[ "\$BURNERPAD_HEX_AUDIT" != skip \]; then mix hex\.audit; fi/);
+for (const source of [release, depsAudit]) {
+  assert.doesNotMatch(source, /BURNERPAD_HEX_AUDIT|gate-new-findings/);
+}
+assert.match(depsAudit, /^      - run: mix hex\.audit\b/m);
+assert.match(depsAudit, /^      - run: npm audit --audit-level=high$/m);
+assert.match(release, /--severity HIGH,CRITICAL --exit-code 1/);
+assert.match(tests, /HEX_AUDIT: \$\{\{ github\.event_name == 'pull_request' && 'skip' \|\| 'required' \}\}/);
 
 assert.match(release, /group: release\n/);
 assert.match(release, /version=\$\([.]github\/scripts\/next-release-version[.]sh "\$REVISION"\)/);

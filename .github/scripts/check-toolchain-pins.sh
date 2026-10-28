@@ -94,4 +94,16 @@ if [ "$setup_beam_count" -ne "$beam_file_count" ]; then
   exit 1
 fi
 
-echo "toolchain pins agree: Elixir $elixir_version, Erlang $erlang_version, Node.js $node_version"
+playwright_lock="$repo_dir/test/browser/package-lock.json"
+playwright_dockerfile="$repo_dir/test/browser/playwright.Dockerfile"
+if ! playwright_version=$(jq -er '.packages["node_modules/@playwright/test"].version' "$playwright_lock"); then
+  echo "test/browser/package-lock.json must lock @playwright/test" >&2
+  exit 1
+fi
+playwright_image=$(sed -n 's/^FROM //p' "$playwright_dockerfile")
+if [[ ! $playwright_image =~ ^mcr\.microsoft\.com/playwright:v${playwright_version//./\\.}-[a-z]+@sha256:[0-9a-f]{64}$ ]]; then
+  echo "test/browser/playwright.Dockerfile '$playwright_image' does not pin Playwright $playwright_version by digest" >&2
+  exit 1
+fi
+
+echo "toolchain pins agree: Elixir $elixir_version, Erlang $erlang_version, Node.js $node_version, Playwright $playwright_version"

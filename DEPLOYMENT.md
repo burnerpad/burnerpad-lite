@@ -207,8 +207,10 @@ The source SBOM and both image SBOMs are distinct release records: the former de
 tree, while the latter describe the built runtime contents.
 
 `ops/cloudflared.Dockerfile` wraps Cloudflare's official image pinned by release version and immutable
-manifest digest, adding the project's release labels and explicit loopback readiness probe. Version,
-image digest, and upstream revision are reviewed together. The daily dependency audit rebuilds and scans
+manifest digest, adding the project's release labels and explicit loopback readiness probe. Version and
+digest sit literally in its single `FROM` line, so Dependabot proposes them together (checked daily); CI
+verifies the digest runs the named release, and the release records the upstream commit that tag peels
+to. The daily dependency audit rebuilds and scans
 both project images, scans the newest official cloudflared image, and fails if a newer release is available.
 The tunnel artifact follows the same scan, attestation, signature, and exact-digest deployment policy as
 the app image.
@@ -216,6 +218,10 @@ the app image.
 [`ops/trivyignore.yaml`](ops/trivyignore.yaml) holds the only accepted scan findings. Each entry names one
 CVE, package version, and binary path, carries a short expiry, and is used only when upstream has no fixed
 release yet; on expiry every scan fails again. The release scan attestation records that file's SHA-256.
+
+Pull requests fail only on Hex, npm, or image findings that their base commit does not already have, so one
+fix can merge while an unrelated advisory is still open. Pushes to `main`, the release (strict build-time
+Hex audit and a scan of the exact published digest), and the daily audit reject every finding.
 
 Publication and deployment are deliberately separate. The release workflow has no VPS, Cloudflare,
 Tailscale, heartbeat, operator, or Erlang-cookie secret and cannot contact production. Deployment is an
