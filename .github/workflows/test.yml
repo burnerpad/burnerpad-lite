@@ -31,7 +31,7 @@ jobs:
         with:
           version-file: .tool-versions
           version-type: strict
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .tool-versions
           package-manager-cache: false
@@ -67,7 +67,7 @@ jobs:
         with:
           version-file: .tool-versions
           version-type: strict
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .tool-versions
           package-manager-cache: false
@@ -104,7 +104,7 @@ jobs:
             -e BROWSER_TEST_BASE_URL=http://127.0.0.1:4014 \
             -e PLAYWRIGHT_OUTPUT_DIR=/tmp/test-results \
             -v "$PWD:/repo:ro" -w /repo/test/browser \
-            mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 \
+            mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea \
             npm test; then
             curl -fsS http://127.0.0.1:4014/readyz >/dev/null \
               || echo "Browser-test server is no longer ready" >&2
@@ -192,7 +192,7 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .tool-versions
           package-manager-cache: false
