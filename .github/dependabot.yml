@@ -1,11 +1,21 @@
 version: 2
+multi-ecosystem-groups:
+  # The browser-test runner and its pinned browser image must move together, or the pinned browsers are
+  # missing for the new runner. check-toolchain-pins.sh rejects a mismatch.
+  playwright:
+    schedule: { interval: weekly }
 updates:
   - package-ecosystem: mix
     directory: /
     schedule: { interval: weekly }
   - package-ecosystem: npm
     directory: /test/browser
-    schedule: { interval: weekly }
+    multi-ecosystem-group: playwright
+    patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /test/browser
+    multi-ecosystem-group: playwright
+    patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
@@ -16,6 +26,7 @@ updates:
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+  # Daily, because the daily audit fails as soon as a newer cloudflared release exists.
   - package-ecosystem: docker
     directory: /ops
-    schedule: { interval: weekly }
+    schedule: { interval: daily }

@@ -25,9 +25,14 @@ RUN mix archive.install git https://github.com/hexpm/hex.git \
       --sha512 992fd755b7926fae455e5e07d9d195f4d3e7f181609eed1b9cabfe548624df10d148cd4b59bda40bebb185d3d68f9a9fd68a70b294101c8ad9cf0fadcc683d24 --force
 
 # Copy the lock too, so the image builds EXACTLY what was tested + audited (M4), and fail the build on any
-# dependency advisory (M9): a vulnerable lock can never be baked into an image.
+# dependency advisory (M9): a vulnerable lock can never be baked into a released image. Only pull-request CI
+# passes BURNERPAD_HEX_AUDIT=skip, because its new-advisory gate runs separately and that image is never
+# published; any other value audits.
 COPY mix.exs mix.lock ./
-RUN mix deps.get --only prod && mix hex.audit && mix deps.compile
+ARG BURNERPAD_HEX_AUDIT=required
+RUN mix deps.get --only prod \
+    && if [ "$BURNERPAD_HEX_AUDIT" != skip ]; then mix hex.audit; fi \
+    && mix deps.compile
 
 COPY lib lib
 COPY priv priv

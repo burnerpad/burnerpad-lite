@@ -40,8 +40,13 @@ jobs:
       - run: mix deps.unlock --check-unused
       - run: git diff --check
       - run: ops/check-security-claims.sh
-      # Fail the build on any dependency advisory (M9) — a vulnerable lock never reaches main.
-      - run: mix hex.audit
+      # Dependency advisories (M9): a pull request fails only on retirements or advisories its base does not
+      # already have, so one fix can merge while another advisory is open. A push to main fails on any
+      # finding, and the release image build and the daily audit always reject every finding.
+      - name: Reject new Hex retirements and advisories
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: .github/scripts/gate-new-findings.sh hex
       - run: mix compile --warnings-as-errors
       # Config has prod-only compile branches; compile that environment too so release-only warnings fail CI.
       - run: MIX_ENV=prod mix compile --warnings-as-errors
@@ -74,11 +79,14 @@ jobs:
       - run: mix deps.get
       - run: npm ci
         working-directory: test/browser
-      - run: npm audit --audit-level=high
-        working-directory: test/browser
+      - name: Reject new high/critical browser-test advisories
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: .github/scripts/gate-new-findings.sh npm test/browser
       - name: Run real-browser matrix in the pinned Playwright image
         run: |
           set -euo pipefail
+          playwright_image=$(sed -n 's/^FROM //p' test/browser/playwright.Dockerfile)
           server_log="$RUNNER_TEMP/burnerpad-browser-server.log"
           PORT=4014 RATE_LIMIT=100000 BAN_THRESHOLD=500000 GLOBAL_CEILING=1000000 \
             MAX_SECRETS=100000 mix run --no-halt >"$server_log" 2>&1 &
@@ -104,7 +112,7 @@ jobs:
             -e BROWSER_TEST_BASE_URL=http://127.0.0.1:4014 \
             -e PLAYWRIGHT_OUTPUT_DIR=/tmp/test-results \
             -v "$PWD:/repo:ro" -w /repo/test/browser \
-            mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea \
+            "$playwright_image" \
             npm test; then
             curl -fsS http://127.0.0.1:4014/readyz >/dev/null \
               || echo "Browser-test server is no longer ready" >&2
@@ -137,9 +145,24 @@ jobs:
             ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb \
             git /repo/priv/static/vendor/crypto-js --no-banner --redact
       - run: docker build --check .
-      - run: docker build --build-arg BURNERPAD_REVISION="$GITHUB_SHA" -t burnerpad:ci .
+      # On pull requests the test job's new-advisory gate replaces the build-time Hex audit; pushes to main
+      # and the release keep the Dockerfile's strict default.
+      - name: Build the app image
+        env:
+          HEX_AUDIT: ${{ github.event_name == 'pull_request' && 'skip' || 'required' }}
+        run: >-
+          docker build --build-arg BURNERPAD_REVISION="$GITHUB_SHA"
+          --build-arg BURNERPAD_HEX_AUDIT="$HEX_AUDIT" -t burnerpad:ci .
       - run: docker build --check -f ops/cloudflared.Dockerfile .
       - run: docker build -f ops/cloudflared.Dockerfile -t burnerpad-cloudflared:ci .
+      - name: Tunnel image digest runs the cloudflared release its FROM tag names
+        run: |
+          expected="cloudflared version $(.github/scripts/cloudflared-pin.sh version) "
+          actual=$(docker run --rm burnerpad-cloudflared:ci version)
+          case "$actual" in
+            "$expected"*) echo "$actual" ;;
+            *) echo "::error::pinned digest reports '$actual', expected '$expected...'"; exit 1 ;;
+          esac
       - name: Tunnel image healthcheck probes its explicit loopback metrics endpoint
         run: test/ci/cloudflared_healthcheck_test.sh burnerpad:ci burnerpad-cloudflared:ci
       - name: Public image and OCI layers contain no release cookie
@@ -170,20 +193,16 @@ jobs:
           trap 'docker rm -f burnerpad-ci >/dev/null 2>&1 || true' EXIT
           BURNERPAD_BASE_URL=http://127.0.0.1:4015 \
             BURNERPAD_EXPECTED_REVISION="$GITHUB_SHA" node ops/smoke/e2e-canary.mjs
-      - name: Reject high/critical app-image vulnerabilities
-        run: >-
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
-          -v "$PWD/ops/trivyignore.yaml:/trivyignore.yaml:ro"
-          aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
-          image --scanners vuln --severity HIGH,CRITICAL --exit-code 1
-          --ignorefile /trivyignore.yaml --skip-version-check burnerpad:ci
-      - name: Reject high/critical tunnel-image vulnerabilities
-        run: >-
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
-          -v "$PWD/ops/trivyignore.yaml:/trivyignore.yaml:ro"
-          aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
-          image --scanners vuln --severity HIGH,CRITICAL --exit-code 1
-          --ignorefile /trivyignore.yaml --skip-version-check burnerpad-cloudflared:ci
+      # Pull requests fail only on image findings their base does not already have; a push to main fails on
+      # any finding, and the release rescans the exact published digest strictly.
+      - name: Reject new high/critical app-image vulnerabilities
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: .github/scripts/gate-new-findings.sh trivy burnerpad:ci Dockerfile
+      - name: Reject new high/critical tunnel-image vulnerabilities
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: .github/scripts/gate-new-findings.sh trivy burnerpad-cloudflared:ci ops/cloudflared.Dockerfile
 
   ops:
     runs-on: ubuntu-latest
@@ -272,6 +291,8 @@ jobs:
           .github/scripts/next-release-version.sh
           .github/scripts/package-source.sh
           .github/scripts/reconcile-durable-issue.sh
+          .github/scripts/cloudflared-pin.sh .github/scripts/gate-new-findings.sh
+          test/ci/gate_new_findings_test.sh
           ops/check-control-tools.sh ops/check-security-claims.sh ops/install-requirements-locked.sh
           test/ci/image_cookie_scanner_test.sh test/ci/image_cookie_test.sh
           test/ci/cloudflared_healthcheck_test.sh
@@ -297,5 +318,7 @@ jobs:
         run: test/ci/release_version_test.sh
       - name: Test strict clean-tree detection
         run: bash test/ci/clean_tree_test.sh
+      - name: Test the pull-request new-findings gate
+        run: test/ci/gate_new_findings_test.sh
       - name: Test durable-issue reconciliation
         run: test/ci/reconcile_durable_issue_test.sh

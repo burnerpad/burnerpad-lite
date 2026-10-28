@@ -45,7 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pinned=$(sed -n 's/^ARG CLOUDFLARED_VERSION=//p' ops/cloudflared.Dockerfile)
+          pinned=$(.github/scripts/cloudflared-pin.sh version)
           latest=$(gh api repos/cloudflare/cloudflared/releases/latest --jq .tag_name)
 
           docker pull "cloudflare/cloudflared:$latest"
@@ -56,7 +56,7 @@ jobs:
             --ignorefile /trivyignore.yaml --skip-version-check "cloudflare/cloudflared:$latest"
 
           if [ "$pinned" != "$latest" ]; then
-            echo "::error::cloudflared $latest is available; update the reviewed version, image digest, and upstream revision (currently $pinned)"
+            echo "::error::cloudflared $latest is available (pinned: $pinned); merge Dependabot's ops/cloudflared.Dockerfile update or bump its FROM tag and digest"
             exit 1
           fi
 

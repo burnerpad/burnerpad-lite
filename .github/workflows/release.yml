@@ -137,16 +137,20 @@ jobs:
           APP_VERSION: ${{ needs.identity.outputs.version }}
           REVISION: ${{ github.event.workflow_run.head_sha }}
           SUFFIX: ${{ matrix.suffix }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -z "$SUFFIX" ]; then
             component_version=$APP_VERSION
+            upstream_revision=
           else
-            component_version=$(sed -n 's/^ARG CLOUDFLARED_VERSION=//p' ops/cloudflared.Dockerfile)
+            component_version=$(.github/scripts/cloudflared-pin.sh version)
+            upstream_revision=$(.github/scripts/cloudflared-pin.sh revision)
           fi
           image="ghcr.io/${GITHUB_REPOSITORY,,}${SUFFIX}"
           echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "tag=$image:sha-$REVISION" >> "$GITHUB_OUTPUT"
           echo "version=$component_version" >> "$GITHUB_OUTPUT"
+          echo "upstream_revision=$upstream_revision" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
@@ -169,6 +173,7 @@ jobs:
           build-args: |
             BURNERPAD_REVISION=${{ github.event.workflow_run.head_sha }}
             BURNERPAD_VERSION=${{ steps.identity.outputs.version }}
+            UPSTREAM_REVISION=${{ steps.identity.outputs.upstream_revision }}
           provenance: mode=max
           sbom: true
       # The SHA tag is discovery only. Approval is bound to the immutable registry digest returned by
