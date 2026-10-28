@@ -184,19 +184,23 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: >-
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+          -v "$PWD/ops/trivyignore.yaml:/trivyignore.yaml:ro"
           aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
           image --image-src docker --scanners vuln --severity HIGH,CRITICAL --exit-code 1
-          --no-progress --skip-version-check "$IMAGE@$DIGEST"
+          --no-progress --ignorefile /trivyignore.yaml --skip-version-check "$IMAGE@$DIGEST"
       - name: Record the passed vulnerability policy for the exact digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           PREDICATE_PATH: ${{ runner.temp }}/trivy-scan-predicate.json
         run: |
-          jq -n --arg digest "$DIGEST" '{
+          # Bind the pass to the exact reviewed exception file, so an accepted finding is never implicit.
+          exceptions_sha256=$(sha256sum ops/trivyignore.yaml | cut -d ' ' -f 1)
+          jq -n --arg digest "$DIGEST" --arg exceptions_sha256 "$exceptions_sha256" '{
             scanner: "aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969",
             image_digest: $digest,
             scanners: ["vuln"],
             rejected_severities: ["HIGH", "CRITICAL"],
+            accepted_exceptions: { path: "ops/trivyignore.yaml", sha256: $exceptions_sha256 },
             result: "passed"
           }' > "$PREDICATE_PATH"
       - name: Attach the passed vulnerability-scan attestation

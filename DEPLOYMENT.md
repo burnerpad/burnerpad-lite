@@ -213,6 +213,10 @@ both project images, scans the newest official cloudflared image, and fails if a
 The tunnel artifact follows the same scan, attestation, signature, and exact-digest deployment policy as
 the app image.
 
+[`ops/trivyignore.yaml`](ops/trivyignore.yaml) holds the only accepted scan findings. Each entry names one
+CVE, package version, and binary path, carries a short expiry, and is used only when upstream has no fixed
+release yet; on expiry every scan fails again. The release scan attestation records that file's SHA-256.
+
 Publication and deployment are deliberately separate. The release workflow has no VPS, Cloudflare,
 Tailscale, heartbeat, operator, or Erlang-cookie secret and cannot contact production. Deployment is an
 operator-initiated Ansible action from a clean checkout after independently verifying the public artifacts.

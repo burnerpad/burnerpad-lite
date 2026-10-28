@@ -1,0 +1,13 @@
+# Reviewed, time-boxed exceptions to the HIGH/CRITICAL image gate. Each entry is scoped to one CVE, one
+# package version, and one binary path, and stops applying on `expired_at`, so the gate fails again
+# instead of silently carrying the exception forward. Remove an entry as soon as upstream ships a fix.
+vulnerabilities:
+  - id: CVE-2026-116587
+    paths:
+      - usr/local/bin/cloudflared
+    purls:
+      - pkg:golang/github.com/go-jose/go-jose/v4@v4.1.4
+    expired_at: 2026-11-11
+    statement: >-
+      No cloudflared release ships go-jose 4.1.6 yet (2026.10.5 and master still pin 4.1.4). Accepted
+      only to replace 2026.9.3, which carries this finding plus seven other HIGH findings.

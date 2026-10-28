@@ -32,13 +32,15 @@ jobs:
       - name: Scan production images
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/ops/trivyignore.yaml:/trivyignore.yaml:ro" \
             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
             image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
-            --skip-version-check burnerpad:audit
+            --ignorefile /trivyignore.yaml --skip-version-check burnerpad:audit
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/ops/trivyignore.yaml:/trivyignore.yaml:ro" \
             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
             image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
-            --skip-version-check burnerpad-cloudflared:audit
+            --ignorefile /trivyignore.yaml --skip-version-check burnerpad-cloudflared:audit
       - name: Check and scan the newest cloudflared release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,9 +50,10 @@ jobs:
 
           docker pull "cloudflare/cloudflared:$latest"
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/ops/trivyignore.yaml:/trivyignore.yaml:ro" \
             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
             image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
-            --skip-version-check "cloudflare/cloudflared:$latest"
+            --ignorefile /trivyignore.yaml --skip-version-check "cloudflare/cloudflared:$latest"
 
           if [ "$pinned" != "$latest" ]; then
             echo "::error::cloudflared $latest is available; update the reviewed version, image digest, and upstream revision (currently $pinned)"
