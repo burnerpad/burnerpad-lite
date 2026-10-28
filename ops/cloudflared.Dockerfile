@@ -1,9 +1,9 @@
 # The official image passes the high/critical scan. Pin its immutable manifest digest and add the
 # project's release identity and readiness probe. The daily audit checks for newer upstream releases;
 # updates to the version, digest, and upstream revision are reviewed, never silently deployed.
-ARG CLOUDFLARED_VERSION=2026.9.3
-ARG UPSTREAM_REVISION=96d39adbc812dc7363834bda908970c1a2560a72
-FROM cloudflare/cloudflared:${CLOUDFLARED_VERSION}@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
+ARG CLOUDFLARED_VERSION=2026.10.5
+ARG UPSTREAM_REVISION=99b2eb2c0152862af2b1abf7c7b4e2170a46b9fe
+FROM cloudflare/cloudflared:${CLOUDFLARED_VERSION}@sha256:1b1d34d0a9c0bfca9de72db8460d328db3f19edd2b96169114e3e893a97bbe53
 
 ARG CLOUDFLARED_VERSION
 ARG UPSTREAM_REVISION
