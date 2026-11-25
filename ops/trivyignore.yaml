@@ -2,12 +2,26 @@
 # package version, and one binary path, and stops applying on `expired_at`, so the gate fails again
 # instead of silently carrying the exception forward. Remove an entry as soon as upstream ships a fix.
 vulnerabilities:
-  - id: CVE-2026-116587
-    paths:
-      - usr/local/bin/cloudflared
+  - id: CVE-2026-107494
     purls:
-      - pkg:golang/github.com/go-jose/go-jose/v4@v4.1.4
-    expired_at: 2026-11-11
+      - pkg:deb/debian/libssl3t64@3.5.9-1~deb13u1?arch=amd64&distro=debian-13.8
+    expired_at: 2026-12-09
     statement: >-
-      No cloudflared release ships go-jose 4.1.6 yet (2026.10.5 and master still pin 4.1.4). Accepted
-      only to replace 2026.9.3, which carries this finding plus seven other HIGH findings.
+      OpenSSL QUIC denial of service; Debian 13 has no fix. The library ships in the official cloudflared
+      2026.11.2 base image but nothing in the image can load it: cloudflared is a statically linked Go
+      binary with no dynamic section, and it speaks QUIC through quic-go, not OpenSSL.
+  - id: CVE-2026-124709
+    purls:
+      - pkg:deb/debian/libssl3t64@3.5.9-1~deb13u1?arch=amd64&distro=debian-13.8
+    expired_at: 2026-12-09
+    statement: >-
+      OpenSSL QUIC stream memory leak; Debian 13 has no fix. Unreachable for the same reason as
+      CVE-2026-107494: the statically linked cloudflared binary never loads libssl.
+  - id: CVE-2026-124851
+    purls:
+      - pkg:deb/debian/libzstd1@1.5.7+dfsg-1?arch=amd64&distro=debian-13.8
+    expired_at: 2026-12-09
+    statement: >-
+      Debian fixed this in 1.5.7+dfsg-1+deb13u1, but the official cloudflared 2026.11.2 image still ships
+      1.5.7+dfsg-1. The statically linked cloudflared binary never loads libzstd. Drop this entry when a
+      cloudflared release picks up the Debian update.
