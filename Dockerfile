@@ -50,7 +50,7 @@ RUN mix compile --warnings-as-errors \
 
 # ── runtime ──────────────────────────────────────────────────────────────────
 # MUST match the build stage's Ubuntu/OpenSSL ABI (see note above). Digest-pinned (L11).
-FROM ubuntu:noble-20261110@sha256:c1c5d8818eca0a4fd0c6c187d459a7af264e7fbf8561bde85e93be2a3bbc8f4a AS runtime
+FROM ubuntu:noble-20261110@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS runtime
 
 ARG BURNERPAD_REVISION=unknown
 ARG BURNERPAD_VERSION
