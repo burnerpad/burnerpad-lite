@@ -2,7 +2,7 @@
 # literally, so Dependabot can propose both together, and add the project's release identity and readiness
 # probe. The release derives the version label and peeled upstream commit from this line; CI checks that the
 # digest runs the named release. Updates are reviewed pull requests, never silently deployed.
-FROM cloudflare/cloudflared:2026.10.5@sha256:1b1d34d0a9c0bfca9de72db8460d328db3f19edd2b96169114e3e893a97bbe53
+FROM cloudflare/cloudflared:2026.11.1@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d
 
 ARG UPSTREAM_REVISION=unknown
 ARG BURNERPAD_REVISION=unknown
